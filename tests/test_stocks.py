@@ -96,6 +96,12 @@ class TestListStocks:
         assert response.status_code == status.HTTP_200_OK
         assert len(response.json()) == 1
 
+    def test_list_stocks_sorted_by_symbol(self, auth_client, sample_stocks):
+        response = auth_client.get("/api/v1/stocks")
+        assert response.status_code == status.HTTP_200_OK
+        symbols = [s["symbol"] for s in response.json()]
+        assert symbols == sorted(symbols)
+
 
 class TestGetStock:
     def test_get_stock(self, auth_client, sample_stocks):

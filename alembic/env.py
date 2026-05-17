@@ -74,7 +74,8 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        connection.execute(text("SET search_path TO public"))
+        if not settings.database_url.startswith("sqlite"):
+            connection.execute(text("SET search_path TO public"))
         context.configure(
             connection=connection, target_metadata=target_metadata
         )

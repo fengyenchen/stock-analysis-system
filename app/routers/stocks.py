@@ -51,7 +51,7 @@ def list_stocks(
     query = db.query(Stock).filter(Stock.is_active == True)
     if q:
         query = query.filter((Stock.symbol.ilike(f"%{q}%")) | (Stock.name.ilike(f"%{q}%")))
-    stocks = query.offset(offset).limit(limit).all()
+    stocks = query.order_by(Stock.symbol).offset(offset).limit(limit).all()
     return stocks
 
 
