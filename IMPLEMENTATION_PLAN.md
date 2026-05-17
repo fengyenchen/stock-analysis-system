@@ -261,7 +261,7 @@ disclaimer banner.
 
 ---
 
-### task-4 — Backend: password reset endpoints
+### task-4 — Backend: password reset endpoints ✅ DONE
 
 **Scope:** Add the two endpoints required by the Forgot/Reset password UI pages.
 The UI (task-5) cannot be merged before this task is complete and deployed.

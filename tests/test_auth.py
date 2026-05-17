@@ -384,6 +384,100 @@ class TestTokenBlacklist:
         assert "Refresh token has been revoked" in response.json()["detail"]
 
 
+# ─── Password Reset Request ───────────────────────────────
+
+class TestPasswordResetRequest:
+    def test_request_existing_email(self, client):
+        register_user(client)
+        response = client.post("/api/v1/password-reset-requests", json={"email": "test@example.com"})
+        assert response.status_code == 200
+        assert "reset link" in response.json()["detail"]
+
+    def test_request_nonexistent_email(self, client):
+        response = client.post("/api/v1/password-reset-requests", json={"email": "ghost@example.com"})
+        assert response.status_code == 200
+        assert "reset link" in response.json()["detail"]
+
+    def test_request_invalid_email(self, client):
+        response = client.post("/api/v1/password-reset-requests", json={"email": "not-an-email"})
+        assert response.status_code == 422
+
+
+# ─── Password Reset ───────────────────────────────────────
+
+class TestPasswordReset:
+    def _insert_token(self, db_session, user_email, *, expires_delta_hours=1, used=False):
+        import hashlib, secrets
+        from datetime import datetime, timezone, timedelta
+        from app.models import PasswordResetToken
+
+        user = db_session.query(User).filter(User.email == user_email).first()
+        plain = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(plain.encode()).hexdigest()
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_delta_hours)
+        used_at = datetime.now(timezone.utc) if used else None
+        record = PasswordResetToken(
+            user_id=user.id,
+            token_hash=token_hash,
+            expires_at=expires_at,
+            used_at=used_at,
+        )
+        db_session.add(record)
+        db_session.commit()
+        return plain
+
+    def test_reset_valid_token(self, client, db_session):
+        register_user(client)
+        plain = self._insert_token(db_session, "test@example.com")
+
+        response = client.post("/api/v1/password-resets", json={
+            "token": plain,
+            "new_password": "NewPass456@",
+        })
+        assert response.status_code == 200
+        assert "Password updated" in response.json()["detail"]
+
+        login_resp = login_user(client, password="NewPass456@")
+        assert login_resp.status_code == 200
+
+    def test_reset_invalid_token(self, client):
+        response = client.post("/api/v1/password-resets", json={
+            "token": "doesnotexist",
+            "new_password": "NewPass456@",
+        })
+        assert response.status_code == 400
+
+    def test_reset_expired_token(self, client, db_session):
+        register_user(client)
+        plain = self._insert_token(db_session, "test@example.com", expires_delta_hours=-2)
+
+        response = client.post("/api/v1/password-resets", json={
+            "token": plain,
+            "new_password": "NewPass456@",
+        })
+        assert response.status_code == 400
+
+    def test_reset_used_token(self, client, db_session):
+        register_user(client)
+        plain = self._insert_token(db_session, "test@example.com", used=True)
+
+        response = client.post("/api/v1/password-resets", json={
+            "token": plain,
+            "new_password": "NewPass456@",
+        })
+        assert response.status_code == 400
+
+    def test_reset_invalid_password_complexity(self, client, db_session):
+        register_user(client)
+        plain = self._insert_token(db_session, "test@example.com")
+
+        response = client.post("/api/v1/password-resets", json={
+            "token": plain,
+            "new_password": "weakpassword",
+        })
+        assert response.status_code == 422
+
+
 class TestLegacyAuthRoutes:
     @pytest.mark.parametrize(
         ("method", "path"),

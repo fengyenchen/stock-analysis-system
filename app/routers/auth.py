@@ -1,3 +1,5 @@
+import hashlib
+import secrets
 from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -7,9 +9,11 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_active_user
-from app.models import User, TokenBlacklist
+from app.models import User, TokenBlacklist, PasswordResetToken
 from app.schemas import (
     LoginRequest,
+    PasswordResetConfirm,
+    PasswordResetRequestCreate,
     RefreshRequest,
     TokenPair,
     UserCreate,
@@ -175,3 +179,54 @@ def refresh(request: RefreshRequest, db: Session = Depends(get_db)):
 @router.get("/users/me", response_model=UserRead)
 def get_me(current_user: User = Depends(get_current_active_user)):
     return current_user
+
+
+@router.post("/password-reset-requests", status_code=status.HTTP_200_OK)
+def request_password_reset(body: PasswordResetRequestCreate, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == body.email).first()
+    if user:
+        plain_token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(plain_token.encode()).hexdigest()
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        reset_token = PasswordResetToken(
+            user_id=user.id,
+            token_hash=token_hash,
+            expires_at=expires_at,
+        )
+        db.add(reset_token)
+        db.commit()
+        # TODO: send email with reset link containing plain_token
+        print(f"[PASSWORD RESET] token for {user.email}: {plain_token}")
+    # Always return 200 to avoid user enumeration
+    return {"detail": "If that email is registered, a reset link has been sent."}
+
+
+@router.post("/password-resets", status_code=status.HTTP_200_OK)
+def reset_password(body: PasswordResetConfirm, db: Session = Depends(get_db)):
+    token_hash = hashlib.sha256(body.token.encode()).hexdigest()
+    reset_token = db.query(PasswordResetToken).filter(
+        PasswordResetToken.token_hash == token_hash
+    ).first()
+
+    if reset_token is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token.",
+        )
+
+    now = datetime.now(timezone.utc)
+    # SQLite returns naive datetimes; normalise for comparison
+    expires_at = reset_token.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if expires_at < now or reset_token.used_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token.",
+        )
+
+    reset_token.user.hashed_password = get_password_hash(body.new_password)
+    reset_token.used_at = now
+    db.commit()
+    return {"detail": "Password updated."}

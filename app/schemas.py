@@ -8,6 +8,18 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 # ─── User Base ───────────────────────────────────────────
 
+def _check_password_complexity(v: str) -> str:
+    if not re.search(r"[A-Z]", v):
+        raise ValueError("Password must contain at least one uppercase letter")
+    if not re.search(r"[a-z]", v):
+        raise ValueError("Password must contain at least one lowercase letter")
+    if not re.search(r"[0-9]", v):
+        raise ValueError("Password must contain at least one digit")
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>_\-+=\[\]~/`\\'\\;]", v):
+        raise ValueError("Password must contain at least one special character")
+    return v
+
+
 class UserBase(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
@@ -19,15 +31,7 @@ class UserCreate(UserBase):
     @field_validator("password")
     @classmethod
     def password_complexity(cls, v: str) -> str:
-        if not re.search(r"[A-Z]", v):
-            raise ValueError("Password must contain at least one uppercase letter")
-        if not re.search(r"[a-z]", v):
-            raise ValueError("Password must contain at least one lowercase letter")
-        if not re.search(r"[0-9]", v):
-            raise ValueError("Password must contain at least one digit")
-        if not re.search(r"[!@#$%^&*(),.?\":{}|<>_\-+=\[\]~/`\\'\\;]", v):
-            raise ValueError("Password must contain at least one special character")
-        return v
+        return _check_password_complexity(v)
 
 
 class UserRead(UserBase):
@@ -63,6 +67,20 @@ class RefreshRequest(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+
+class PasswordResetRequestCreate(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def password_complexity(cls, v: str) -> str:
+        return _check_password_complexity(v)
 
 
 # ─── Stock ───────────────────────────────────────────────
