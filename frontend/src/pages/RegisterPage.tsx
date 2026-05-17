@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { register } from "@/api/auth";
+import { getApiErrorMessage } from "@/api/client";
 import { toast } from "sonner";
 import { TrendingUp, Eye, EyeOff } from "lucide-react";
 
@@ -35,9 +36,8 @@ export function RegisterPage() {
       await register({ username, email, password });
       toast.success("Account created! Please sign in.");
       navigate("/login");
-    } catch (err: any) {
-      const msg = err.response?.data?.detail || "Registration failed";
-      toast.error(msg);
+    } catch (err: unknown) {
+      toast.error(getApiErrorMessage(err, "Registration failed"));
     } finally {
       setIsSubmitting(false);
     }

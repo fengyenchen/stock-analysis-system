@@ -8,6 +8,7 @@ import {
   addWatchlistItem,
 } from "@/api/watchlists";
 import { searchStocks } from "@/api/stocks";
+import { getApiErrorMessage } from "@/api/client";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -54,8 +55,8 @@ export function WatchlistDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["watchlist-quotes", watchlistId] });
       queryClient.invalidateQueries({ queryKey: ["watchlists"] });
     },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.detail || "Failed to remove");
+    onError: (err: unknown) => {
+      toast.error(getApiErrorMessage(err, "Failed to remove"));
     },
   });
 
@@ -69,8 +70,8 @@ export function WatchlistDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["watchlist-quotes", watchlistId] });
       queryClient.invalidateQueries({ queryKey: ["watchlists"] });
     },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.detail || "Failed to add");
+    onError: (err: unknown) => {
+      toast.error(getApiErrorMessage(err, "Failed to add"));
     },
   });
 

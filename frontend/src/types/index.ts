@@ -109,3 +109,6 @@ export interface WatchlistWithQuotes {
   name: string;
   quotes: StockQuote[];
 }
+
+export interface PasswordResetRequest { email: string; }
+export interface PasswordResetConfirmRequest { token: string; new_password: string; }

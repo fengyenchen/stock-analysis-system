@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 import { login } from "@/api/auth";
 import { getMe } from "@/api/auth";
-import { setTokens } from "@/api/client";
+import { setTokens, getApiErrorMessage } from "@/api/client";
 import { toast } from "sonner";
 import { TrendingUp, Eye, EyeOff } from "lucide-react";
 
@@ -25,9 +25,8 @@ export function LoginPage() {
       setAuth(user, tokens);
       toast.success("Welcome back!");
       navigate("/");
-    } catch (err: any) {
-      const msg = err.response?.data?.detail || "Login failed";
-      toast.error(msg);
+    } catch (err: unknown) {
+      toast.error(getApiErrorMessage(err, "Login failed"));
     } finally {
       setIsSubmitting(false);
     }
