@@ -39,17 +39,25 @@ function App() {
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
+        {/* Public routes — no auth required */}
+        <Route element={<Layout />}>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/stocks" element={<StockSearchPage />} />
+          <Route path="/stocks/:symbol" element={<StockDetailPage />} />
+        </Route>
+
+        {/* Auth routes — no layout */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+
+        {/* Protected routes */}
         <Route element={<ProtectedRoute />}>
           <Route element={<Layout />}>
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/stocks" element={<StockSearchPage />} />
-            <Route path="/stocks/:symbol" element={<StockDetailPage />} />
             <Route path="/watchlists" element={<WatchlistsPage />} />
             <Route path="/watchlists/:id" element={<WatchlistDetailPage />} />
           </Route>
         </Route>
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>

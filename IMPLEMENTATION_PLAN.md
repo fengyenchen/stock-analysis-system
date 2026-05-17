@@ -195,7 +195,7 @@ parallel, track C depends on track A.
 
 ---
 
-### task-3 — Guest mode routing + Navbar
+### task-3 — Guest mode routing + Navbar ✅ DONE
 
 **Scope:** Make Dashboard, Stocks, and Stock Detail pages publicly accessible
 without login. Add conditional Login/Logout in Navbar and the investment
