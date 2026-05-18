@@ -1,7 +1,7 @@
 import re
 from datetime import date, datetime
 from decimal import Decimal
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -151,6 +151,25 @@ class StockSyncJobRead(BaseModel):
     created_at: datetime
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+
+
+class RecommendationIndicators(BaseModel):
+    close: Decimal
+    ma5: Optional[Decimal] = None
+    ma20: Optional[Decimal] = None
+    ma60: Optional[Decimal] = None
+    rsi14: Optional[Decimal] = None
+    volume_ratio: Optional[Decimal] = None
+
+
+class StockRecommendationRead(BaseModel):
+    symbol: str
+    recommendation: Literal["buy", "hold", "sell"]
+    confidence: int = Field(..., ge=0, le=100)
+    as_of: Optional[date] = None
+    indicators: RecommendationIndicators
+    reasons: List[str]
+    disclaimer: str
 
 
 class StockQuoteRead(BaseModel):

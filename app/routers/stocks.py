@@ -10,11 +10,13 @@ from app.models import Stock, StockPrice, StockSyncJob, StockSyncStatus, User
 from app.schemas import (
     StockPriceRead,
     StockQuoteRead,
+    StockRecommendationRead,
     StockRead,
     StockSyncJobCreate,
     StockSyncJobRead,
     StockSyncStatusRead,
 )
+from app.services.recommendations import get_stock_recommendation
 from app.services.stock_data import async_get_realtime_quote, sync_historical_prices
 
 router = APIRouter(prefix="/stocks", tags=["Stocks"])
@@ -116,6 +118,21 @@ def get_stock_history(
 
     prices = query.order_by(StockPrice.date.desc()).all()
     return prices
+
+
+@router.get("/{symbol}/recommendation", response_model=StockRecommendationRead)
+def get_stock_recommendation_endpoint(
+    symbol: str,
+    db: Session = Depends(get_db),
+):
+    """Get a rule-based technical trading signal for a stock."""
+    stock = db.query(Stock).filter(Stock.symbol == symbol, Stock.is_active == True).first()
+    if not stock:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Stock {symbol} not found",
+        )
+    return get_stock_recommendation(db, stock)
 
 
 @router.get("/{symbol}/sync-status", response_model=StockSyncStatusRead)

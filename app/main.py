@@ -2,7 +2,7 @@ import os
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 
 from app.config import settings
 from app.routers import auth, stocks, watchlists
@@ -65,6 +65,7 @@ async def api_not_found(full_path: str = ""):
 # Serve built frontend (SPA fallback)
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _FRONTEND_DIST = os.path.join(_BASE_DIR, "frontend", "dist")
+_FRONTEND_DEV_ORIGIN = "http://127.0.0.1:5173"
 
 
 @app.get("/{full_path:path}")
@@ -72,4 +73,16 @@ async def serve_frontend(full_path: str):
     file_path = os.path.join(_FRONTEND_DIST, full_path)
     if os.path.exists(file_path) and os.path.isfile(file_path):
         return FileResponse(file_path)
-    return FileResponse(os.path.join(_FRONTEND_DIST, "index.html"))
+
+    index_path = os.path.join(_FRONTEND_DIST, "index.html")
+    if os.path.exists(index_path) and os.path.isfile(index_path):
+        return FileResponse(index_path)
+
+    if settings.environment == "development":
+        redirect_path = f"/{full_path}" if full_path else "/"
+        return RedirectResponse(f"{_FRONTEND_DEV_ORIGIN}{redirect_path}")
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Frontend build not found. Run the frontend dev server or create frontend/dist first.",
+    )

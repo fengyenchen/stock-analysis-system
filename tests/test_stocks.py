@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -9,24 +9,36 @@ from app.models import Stock, StockPrice, StockSyncJob
 from tests.conftest import login_user, register_user
 
 
-# ─── Auth Requirement ─────────────────────────────────────
+# ─── Public Stock Reads ───────────────────────────────────
 
-class TestStocksAuth:
-    def test_search_requires_auth(self, client):
+class TestStocksPublicReads:
+    def test_search_is_public(self, client, sample_stocks):
         response = client.get("/api/v1/stocks?q=台積")
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.status_code == status.HTTP_200_OK
 
-    def test_list_requires_auth(self, client):
+    def test_list_is_public(self, client, sample_stocks):
         response = client.get("/api/v1/stocks")
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.status_code == status.HTTP_200_OK
 
-    def test_quote_requires_auth(self, client):
+    @patch("app.services.stock_data.twstock.realtime.get")
+    def test_quote_is_public(self, mock_get, client, sample_stocks):
+        mock_get.return_value = {
+            "success": True,
+            "info": {"code": "2330", "name": "台積電"},
+            "realtime": {
+                "latest_trade_price": "850.00",
+                "open": "845.00",
+                "high": "855.00",
+                "low": "840.00",
+                "accumulate_trade_volume": "50000",
+            },
+        }
         response = client.get("/api/v1/stocks/2330/quotes/latest")
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.status_code == status.HTTP_200_OK
 
-    def test_history_requires_auth(self, client):
+    def test_history_is_public(self, client, sample_stocks):
         response = client.get("/api/v1/stocks/2330/prices")
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.status_code == status.HTTP_200_OK
 
     def test_sync_requires_auth(self, client):
         response = client.post("/api/v1/stock-sync-jobs", json={"symbol": "2330"})
@@ -309,6 +321,52 @@ class TestStockHistory:
         data = response.json()
         assert len(data) == 1
         assert data[0]["date"] == "2024-01-01"
+
+
+# ─── Recommendation ───────────────────────────────────────
+
+class TestStockRecommendation:
+    def test_get_recommendation_no_history_returns_hold(self, client, sample_stocks):
+        response = client.get("/api/v1/stocks/2330/recommendation")
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["symbol"] == "2330"
+        assert data["recommendation"] == "hold"
+        assert data["confidence"] == 20
+        assert data["as_of"] is None
+        assert "Not enough historical price data" in data["reasons"]
+        assert "not financial advice" in data["disclaimer"]
+
+    def test_get_recommendation_buy(self, client, sample_stocks, db_session):
+        stock = db_session.query(Stock).filter(Stock.symbol == "2330").first()
+        for index in range(80):
+            close = Decimal(100 + index)
+            db_session.add(
+                StockPrice(
+                    stock_id=stock.id,
+                    date=date(2024, 1, 1) + timedelta(days=index),
+                    open_price=close,
+                    high_price=close,
+                    low_price=close,
+                    close_price=close,
+                    volume=120000,
+                )
+            )
+        db_session.commit()
+
+        response = client.get("/api/v1/stocks/2330/recommendation")
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["recommendation"] == "buy"
+        assert data["confidence"] >= 70
+        assert data["indicators"]["ma20"] is not None
+
+    def test_get_recommendation_stock_not_found(self, client):
+        response = client.get("/api/v1/stocks/9999/recommendation")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 # ─── Sync ─────────────────────────────────────────────────
