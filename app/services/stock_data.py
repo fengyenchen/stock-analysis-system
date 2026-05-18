@@ -415,12 +415,14 @@ def sync_historical_prices(
         status.records_upserted = upserted
         db.commit()
     except Exception as exc:
-        db.rollback()
-        status = _get_or_create_sync_status(db, stock)
-        status.status = "failed"
-        status.last_attempt_at = datetime.now(timezone.utc)
-        status.last_error = str(exc)[:500]
-        db.commit()
+        # Re-query stock to avoid detached instance error after rollback
+        stock = db.query(Stock).filter(Stock.symbol == symbol).first()
+        if stock:
+            status = _get_or_create_sync_status(db, stock)
+            status.status = "failed"
+            status.last_attempt_at = datetime.now(timezone.utc)
+            status.last_error = str(exc)[:500]
+            db.commit()
         raise
 
     return StockSyncResult(

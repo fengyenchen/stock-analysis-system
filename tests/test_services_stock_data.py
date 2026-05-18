@@ -207,11 +207,13 @@ class TestSyncHistoricalPrices:
             assert result.symbol == sample_stocks[0].symbol
 
     def test_failed_sync_updates_status(self, db_session, sample_stocks):
+        symbol = sample_stocks[0].symbol
+        stock_id = sample_stocks[0].id
         with patch("app.services.stock_data._fetch_historical_yfinance", return_value=[]), patch("app.services.stock_data.TWSEFetcher", side_effect=Exception("Network error")):
             with pytest.raises(Exception, match="Network error"):
-                sync_historical_prices(db_session, sample_stocks[0].symbol, start=date(2024, 1, 1), end=date(2024, 1, 31))
+                sync_historical_prices(db_session, symbol, start=date(2024, 1, 1), end=date(2024, 1, 31))
 
-        status = db_session.query(StockSyncStatus).filter_by(stock_id=sample_stocks[0].id).first()
+        status = db_session.query(StockSyncStatus).filter_by(stock_id=stock_id).first()
         assert status is not None
         assert status.status == "failed"
         assert "Network error" in status.last_error

@@ -372,8 +372,9 @@ class TestStockRecommendation:
 # ─── Sync ─────────────────────────────────────────────────
 
 class TestStockSync:
+    @patch("app.services.stock_data._fetch_historical_yfinance", return_value=[])
     @patch("app.services.stock_data.TWSEFetcher")
-    def test_sync_success(self, mock_fetcher_class, auth_client, sample_stocks, db_session):
+    def test_sync_success(self, mock_fetcher_class, mock_yf, auth_client, sample_stocks, db_session):
         from collections import namedtuple
         Data = namedtuple("Data", ["date", "capacity", "turnover", "open", "high", "low", "close", "change", "transaction"])
         mock_fetcher = mock_fetcher_class.return_value
@@ -398,8 +399,9 @@ class TestStockSync:
         assert job_response.status_code == status.HTTP_200_OK
         assert job_response.json()["id"] == data["id"]
 
+    @patch("app.services.stock_data._fetch_historical_yfinance", return_value=[])
     @patch("app.services.stock_data.TWSEFetcher")
-    def test_sync_ignores_duplicate_prices(self, mock_fetcher_class, auth_client, sample_stocks, db_session):
+    def test_sync_ignores_duplicate_prices(self, mock_fetcher_class, mock_yf, auth_client, sample_stocks, db_session):
         from collections import namedtuple
         Data = namedtuple(
             "Data",
