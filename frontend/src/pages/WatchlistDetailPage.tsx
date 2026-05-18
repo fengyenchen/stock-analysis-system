@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -8,6 +8,7 @@ import {
   addWatchlistItem,
 } from "@/api/watchlists";
 import { searchStocks } from "@/api/stocks";
+import { useSSEQuotes } from "@/hooks/useSSEQuotes";
 import { getApiErrorMessage } from "@/api/client";
 import { toast } from "sonner";
 import {
@@ -18,7 +19,11 @@ import {
   TrendingDown,
   Plus,
   X,
+  Radio,
 } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { Badge } from "@/components/ui/Badge";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 export function WatchlistDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -34,11 +39,16 @@ export function WatchlistDetailPage() {
     enabled: !!watchlistId,
   });
 
+  const symbols = useMemo(() => {
+    return watchlistQuery.data?.items.map((s) => s.symbol) ?? [];
+  }, [watchlistQuery.data]);
+
+  const { quotes: liveQuotes, connected: sseConnected } = useSSEQuotes(symbols);
+
   const quotesQuery = useQuery({
     queryKey: ["watchlist-quotes", watchlistId],
     queryFn: () => getWatchlistQuotes(watchlistId),
-    enabled: !!watchlistId,
-    refetchInterval: 30000,
+    enabled: !!watchlistId && symbols.length > 0 && !sseConnected,
   });
 
   const searchMutation = useQuery({
@@ -76,9 +86,16 @@ export function WatchlistDetailPage() {
   });
 
   const watchlist = watchlistQuery.data;
-  const quotes = quotesQuery.data?.quotes ?? [];
 
-  const quoteMap = new Map(quotes.map((q) => [q.symbol, q]));
+  const quoteMap = useMemo(() => {
+    const map = new Map();
+    if (sseConnected) {
+      liveQuotes.forEach((q, symbol) => map.set(symbol, q));
+    } else if (quotesQuery.data) {
+      quotesQuery.data.quotes.forEach((q) => map.set(q.symbol, q));
+    }
+    return map;
+  }, [sseConnected, liveQuotes, quotesQuery.data]);
 
   return (
     <div className="space-y-6">
@@ -94,18 +111,23 @@ export function WatchlistDetailPage() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-primary">{watchlist?.name || "Watchlist"}</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-primary">{watchlist?.name || "Watchlist"}</h1>
+            {sseConnected && (
+              <Badge variant="success" className="flex items-center gap-1">
+                <Radio className="w-3 h-3 animate-pulse" />
+                Live
+              </Badge>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground">
             {watchlist?.items.length ?? 0} stock{watchlist?.items.length !== 1 ? "s" : ""}
           </p>
         </div>
-        <button
-          onClick={() => setShowSearch(!showSearch)}
-          className="flex items-center gap-2 px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors"
-        >
+        <Button onClick={() => setShowSearch(!showSearch)}>
           {showSearch ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
           {showSearch ? "Close" : "Add Stock"}
-        </button>
+        </Button>
       </div>
 
       {showSearch && (
@@ -151,8 +173,10 @@ export function WatchlistDetailPage() {
       )}
 
       {watchlistQuery.isLoading && (
-        <div className="flex justify-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent" />
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-16 w-full" />
+          ))}
         </div>
       )}
 
@@ -234,7 +258,7 @@ export function WatchlistDetailPage() {
               </tbody>
             </table>
           </div>
-          {quotesQuery.isFetching && (
+          {quotesQuery.isFetching && !sseConnected && (
             <div className="px-4 py-2 text-xs text-muted-foreground bg-muted/50 flex items-center gap-2">
               <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-accent" />
               Refreshing quotes...

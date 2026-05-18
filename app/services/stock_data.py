@@ -182,13 +182,96 @@ def _fetch_month_with_fetcher(fetcher, symbol: str, year: int, month: int) -> li
     return result.get("data", [])
 
 
+def _fetch_historical_yfinance(symbol: str, market: str, start: date, end: date) -> list:
+    """Fetch historical prices via Yahoo Finance in a single request.
+
+    Returns a list of namedtuple objects compatible with twstock data rows.
+    """
+    try:
+        import yfinance as yf
+    except ImportError:
+        logger.debug("yfinance not installed, skipping fast path")
+        return []
+
+    yf_symbol = f"{symbol}.TW" if market == "TWSE" else f"{symbol}.TWO"
+    try:
+        # yfinance end date is exclusive, so add one day
+        end_exclusive = end + timedelta(days=1)
+        ticker = yf.Ticker(yf_symbol)
+        df = ticker.history(start=start.isoformat(), end=end_exclusive.isoformat(), auto_adjust=False)
+    except Exception as exc:
+        logger.warning("Yahoo Finance fetch failed for %s: %s", yf_symbol, exc)
+        return []
+
+    if df.empty:
+        logger.debug("Yahoo Finance returned no data for %s", yf_symbol)
+        return []
+
+    from collections import namedtuple
+
+    Data = namedtuple("Data", ["date", "open", "high", "low", "close", "capacity", "change"])
+
+    rows = []
+    prev_close = None
+    for idx, row in df.iterrows():
+        # Handle timezone-aware datetime index
+        row_date = idx.date() if hasattr(idx, "date") else idx
+
+        open_p = row.get("Open")
+        high_p = row.get("High")
+        low_p = row.get("Low")
+        close_p = row.get("Close")
+        volume = row.get("Volume")
+
+        # Skip rows with missing OHLC
+        if None in (open_p, high_p, low_p, close_p):
+            continue
+        try:
+            o_val = float(open_p)
+            h_val = float(high_p)
+            l_val = float(low_p)
+            c_val = float(close_p)
+        except Exception:
+            continue
+        if None in (o_val, h_val, l_val, c_val):
+            continue
+
+        change = None
+        if prev_close is not None:
+            try:
+                change = round(c_val - prev_close, 2)
+            except Exception:
+                pass
+
+        try:
+            vol_int = int(volume) if volume == volume else 0  # NaN check
+        except Exception:
+            vol_int = 0
+
+        rows.append(
+            Data(
+                date=row_date,
+                open=o_val,
+                high=h_val,
+                low=l_val,
+                close=c_val,
+                capacity=vol_int,
+                change=change,
+            )
+        )
+        prev_close = c_val
+
+    logger.info("Yahoo Finance returned %d rows for %s", len(rows), yf_symbol)
+    return rows
+
+
 def sync_historical_prices(
     db: Session,
     symbol: str,
     start: Optional[date] = None,
     end: Optional[date] = None,
 ) -> StockSyncResult:
-    """Fetch and cache historical prices for a stock from twstock by month."""
+    """Fetch and cache historical prices for a stock."""
     stock = db.query(Stock).filter(Stock.symbol == symbol).first()
     if not stock:
         raise ValueError(f"Stock {symbol} not found")
@@ -232,28 +315,34 @@ def sync_historical_prices(
     try:
         t0 = time.perf_counter()
 
-        # Reusable fetcher — stateless, thread-safe
-        code_info = twstock.codes.get(symbol)
-        data_source = getattr(code_info, "data_source", "twse") if code_info else "twse"
-        fetcher = TWSEFetcher() if data_source == "twse" else TPEXFetcher()
+        # Fast path: Yahoo Finance fetches all history in one request
+        all_rows = _fetch_historical_yfinance(symbol, stock.market, start, end)
+        fetcher_used = "yfinance"
 
-        all_rows = []
-        if len(months) == 1:
-            rows = _fetch_month_with_fetcher(fetcher, symbol, months[0][0], months[0][1])
-            if rows:
-                all_rows.extend(rows)
-        else:
-            from concurrent.futures import ThreadPoolExecutor, as_completed
+        if not all_rows:
+            # Fallback: twstock month-by-month fetch
+            code_info = twstock.codes.get(symbol)
+            data_source = getattr(code_info, "data_source", "twse") if code_info else "twse"
+            fetcher = TWSEFetcher() if data_source == "twse" else TPEXFetcher()
+            fetcher_used = "twstock"
 
-            with ThreadPoolExecutor(max_workers=settings.stock_sync_max_concurrent) as executor:
-                futures = {
-                    executor.submit(_fetch_month_with_fetcher, fetcher, symbol, year, month): (year, month)
-                    for year, month in months
-                }
-                for future in as_completed(futures):
-                    rows = future.result()
-                    if rows:
-                        all_rows.extend(rows)
+            all_rows = []
+            if len(months) == 1:
+                rows = _fetch_month_with_fetcher(fetcher, symbol, months[0][0], months[0][1])
+                if rows:
+                    all_rows.extend(rows)
+            else:
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+
+                with ThreadPoolExecutor(max_workers=settings.stock_sync_max_concurrent) as executor:
+                    futures = {
+                        executor.submit(_fetch_month_with_fetcher, fetcher, symbol, year, month): (year, month)
+                        for year, month in months
+                    }
+                    for future in as_completed(futures):
+                        rows = future.result()
+                        if rows:
+                            all_rows.extend(rows)
 
         t1 = time.perf_counter()
 
@@ -308,10 +397,11 @@ def sync_historical_prices(
 
         t2 = time.perf_counter()
         logger.info(
-            "[%s] synced %d months → %d rows (fetch %.2fs | db %.2fs | total %.2fs)",
+            "[%s] synced %d months → %d rows via %s (fetch %.2fs | db %.2fs | total %.2fs)",
             symbol,
             months_requested,
             upserted,
+            fetcher_used,
             t1 - t0,
             t2 - t1,
             t2 - t0,

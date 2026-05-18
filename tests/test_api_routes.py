@@ -34,6 +34,7 @@ def test_rest_api_route_inventory():
         "/api/v1/stock-sync-jobs/{job_id}": {"GET"},
         "/api/v1/price-alerts": {"GET", "POST"},
         "/api/v1/price-alerts/{alert_id}": {"PATCH", "DELETE"},
+        "/api/v1/events/quotes": {"GET"},
         "/api/v1/watchlists": {"GET", "POST"},
         "/api/v1/watchlists/{watchlist_id}": {"GET", "PATCH", "DELETE"},
         "/api/v1/watchlists/{watchlist_id}/items/{symbol}": {"PUT", "DELETE"},

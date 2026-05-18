@@ -201,13 +201,13 @@ class TestSyncHistoricalPrices:
             ],
         }
 
-        with patch("app.services.stock_data.TWSEFetcher", return_value=mock_fetcher), patch("app.services.stock_data.time.sleep"):
+        with patch("app.services.stock_data._fetch_historical_yfinance", return_value=[]), patch("app.services.stock_data.TWSEFetcher", return_value=mock_fetcher), patch("app.services.stock_data.time.sleep"):
             result = sync_historical_prices(db_session, sample_stocks[0].symbol, start=date(2024, 1, 1), end=date(2024, 1, 31))
             assert result.records_upserted >= 1
             assert result.symbol == sample_stocks[0].symbol
 
     def test_failed_sync_updates_status(self, db_session, sample_stocks):
-        with patch("app.services.stock_data.TWSEFetcher", side_effect=Exception("Network error")):
+        with patch("app.services.stock_data._fetch_historical_yfinance", return_value=[]), patch("app.services.stock_data.TWSEFetcher", side_effect=Exception("Network error")):
             with pytest.raises(Exception, match="Network error"):
                 sync_historical_prices(db_session, sample_stocks[0].symbol, start=date(2024, 1, 1), end=date(2024, 1, 31))
 
@@ -233,11 +233,24 @@ class TestSyncHistoricalPrices:
             return {"data": month_data.get((year, month), [])}
         mock_fetcher.fetch = fetch
 
-        with patch("app.services.stock_data.TWSEFetcher", return_value=mock_fetcher), patch("app.services.stock_data.time.sleep"):
+        with patch("app.services.stock_data._fetch_historical_yfinance", return_value=[]), patch("app.services.stock_data.TWSEFetcher", return_value=mock_fetcher), patch("app.services.stock_data.time.sleep"):
             result = sync_historical_prices(db_session, sample_stocks[0].symbol, start=date(2024, 1, 1), end=date(2024, 3, 31))
             assert result.records_upserted == 3
             assert result.symbol == sample_stocks[0].symbol
             assert result.months_requested == 3
+
+    def test_successful_sync_yfinance_fast_path(self, db_session, sample_stocks):
+        from collections import namedtuple
+        Data = namedtuple("Data", ["date", "open", "high", "low", "close", "capacity", "change"])
+        yf_rows = [
+            Data(date=date(2024, 1, 5), open=800.0, high=810.0, low=795.0, close=805.0, capacity=100000, change=5.0),
+            Data(date=date(2024, 1, 8), open=805.0, high=815.0, low=800.0, close=810.0, capacity=120000, change=5.0),
+        ]
+
+        with patch("app.services.stock_data._fetch_historical_yfinance", return_value=yf_rows):
+            result = sync_historical_prices(db_session, sample_stocks[0].symbol, start=date(2024, 1, 1), end=date(2024, 1, 31))
+            assert result.records_upserted == 2
+            assert result.symbol == sample_stocks[0].symbol
 
 
 class TestSyncRecentPricesForActiveStocks:

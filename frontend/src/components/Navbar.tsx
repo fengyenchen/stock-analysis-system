@@ -3,6 +3,8 @@ import { useAuthStore } from "@/stores/authStore";
 import { logout as apiLogout } from "@/api/auth";
 import { clearTokens, getAccessToken } from "@/api/client";
 import { useQueryClient } from "@tanstack/react-query";
+import { useTheme } from "@/hooks/useTheme";
+import { Button } from "@/components/ui/Button";
 import { toast } from "sonner";
 import {
   Search,
@@ -12,6 +14,9 @@ import {
   TrendingUp,
   User,
   AlertCircle,
+  Moon,
+  Sun,
+  Bell,
 } from "lucide-react";
 
 export function Navbar() {
@@ -19,6 +24,7 @@ export function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const { theme, toggleTheme } = useTheme();
 
   const handleLogout = async () => {
     try {
@@ -70,28 +76,39 @@ export function Navbar() {
               </Link>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleTheme}
+                aria-label="Toggle theme"
+              >
+                {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </Button>
+
               {user ? (
                 <>
+                  <Link
+                    to="/alerts"
+                    className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary px-2 py-2 rounded-lg transition-colors"
+                  >
+                    <Bell className="w-4 h-4" />
+                  </Link>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <User className="w-4 h-4" />
                     <span className="hidden sm:inline">{user.username}</span>
                   </div>
-                  <button
-                    onClick={handleLogout}
-                    className="flex items-center gap-1.5 text-sm text-danger hover:bg-red-50 px-3 py-2 rounded-lg transition-colors"
-                  >
+                  <Button variant="ghost" size="sm" onClick={handleLogout} className="text-danger">
                     <LogOut className="w-4 h-4" />
                     <span className="hidden sm:inline">Logout</span>
-                  </button>
+                  </Button>
                 </>
               ) : (
-                <Link
-                  to="/login"
-                  className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg font-medium transition-colors text-muted-foreground hover:text-primary hover:bg-muted"
-                >
-                  <LogIn className="w-4 h-4" />
-                  <span className="hidden sm:inline">Login</span>
+                <Link to="/login">
+                  <Button variant="ghost" size="sm">
+                    <LogIn className="w-4 h-4" />
+                    <span className="hidden sm:inline">Login</span>
+                  </Button>
                 </Link>
               )}
             </div>
