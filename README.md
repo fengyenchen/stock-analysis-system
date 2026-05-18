@@ -13,6 +13,8 @@ A full-stack Taiwan stock market data platform with JWT authentication, real-tim
 ## Features
 
 - **User Authentication** — register, login, logout, token refresh
+- **Password Reset** — forgot-password flow with token-based email reset
+- **Guest Mode** — browse stocks and stock details without an account; watchlist features require login
 - **Stock Search** — search TWSE/TPEx stocks by symbol or name
 - **Real-time Quotes** — fetch live stock quotes
 - **Historical Prices** — view OHLCV historical data with date range filtering
@@ -41,7 +43,7 @@ A full-stack Taiwan stock market data platform with JWT authentication, real-tim
 │       └── stock_data.py       # Taiwan stock data service
 ├── frontend/                   # React frontend
 │   ├── src/
-│   │   ├── pages/              # Page components
+│   │   ├── pages/              # Page components (Dashboard, Stocks, Watchlists, Auth, Password Reset)
 │   │   ├── components/         # Shared components
 │   │   ├── api/                # API clients
 │   │   ├── stores/             # Zustand state stores
@@ -146,6 +148,8 @@ Common status codes:
 | POST | `/api/v1/sessions` | Create a session and get tokens |
 | DELETE | `/api/v1/sessions/current` | Delete the current session |
 | POST | `/api/v1/token-refreshes` | Rotate a refresh token and get a new token pair |
+| POST | `/api/v1/password-reset-requests` | Request a password reset token |
+| POST | `/api/v1/password-resets` | Reset password using a valid token |
 
 ### Stocks
 
@@ -156,8 +160,10 @@ Common status codes:
 | GET | `/api/v1/stocks/{symbol}/quotes/latest` | Get latest quote |
 | GET | `/api/v1/stocks/{symbol}/prices` | Get historical prices |
 | GET | `/api/v1/stocks/{symbol}/sync-status` | Get historical price sync status |
-| POST | `/api/v1/stock-sync-jobs` | Create a historical price sync job |
-| GET | `/api/v1/stock-sync-jobs/{id}` | Get a historical price sync job |
+| POST | `/api/v1/stock-sync-jobs` | Create a historical price sync job (auth required) |
+| GET | `/api/v1/stock-sync-jobs/{id}` | Get a historical price sync job (auth required) |
+
+All `GET /api/v1/stocks*` endpoints are publicly accessible without authentication.
 
 ### Watchlists
 
