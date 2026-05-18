@@ -462,7 +462,7 @@ useEffect(() => {
 
 ---
 
-### task-7 — StockSearchPage redesign
+### task-7 — StockSearchPage redesign ✅ DONE
 
 **Scope:** Improve the search page with better filtering UI and infinite scroll
 but using real API data only. No mock change percentages.
