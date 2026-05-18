@@ -45,7 +45,6 @@ def list_stocks(
     offset: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
 ):
     """List available stocks, optionally filtered by symbol or name."""
     query = db.query(Stock).filter(Stock.is_active == True)
@@ -59,7 +58,6 @@ def list_stocks(
 def get_stock(
     symbol: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
 ):
     """Get a stock resource."""
     stock = db.query(Stock).filter(Stock.symbol == symbol, Stock.is_active == True).first()
@@ -75,7 +73,6 @@ def get_stock(
 async def get_stock_quote(
     symbol: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
 ):
     """Get real-time quote for a stock (delayed data from twstock)."""
     stock = db.query(Stock).filter(Stock.symbol == symbol).first()
@@ -101,7 +98,6 @@ def get_stock_history(
     start: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
     end: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
 ):
     """Get cached historical prices for a stock."""
     stock = db.query(Stock).filter(Stock.symbol == symbol).first()
@@ -126,7 +122,6 @@ def get_stock_history(
 def get_stock_sync_status(
     symbol: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
 ):
     """Get historical price sync status for a stock."""
     stock = db.query(Stock).filter(Stock.symbol == symbol).first()

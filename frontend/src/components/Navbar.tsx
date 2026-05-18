@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 import { logout as apiLogout } from "@/api/auth";
 import { clearTokens, getAccessToken } from "@/api/client";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Search,
@@ -17,6 +18,7 @@ export function Navbar() {
   const { user, logout: storeLogout } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
 
   const handleLogout = async () => {
     try {
@@ -27,6 +29,7 @@ export function Navbar() {
     } finally {
       clearTokens();
       storeLogout();
+      queryClient.removeQueries({ queryKey: ["watchlists"] });
       toast.success("Logged out successfully");
       navigate("/");
     }

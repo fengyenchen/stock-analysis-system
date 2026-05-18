@@ -623,3 +623,43 @@ above — do not merge them even incidentally:
 - Removal of the date range pickers from StockDetailPage
 - Removal of `onError` callbacks from mutations
 - Removal of the auto-sync `useEffect`
+
+---
+
+## Post-PR #10 Follow-up Tasks ✅ DONE
+
+After completing tasks 1–8, three remaining issues from the PR #10 review were
+identified and resolved as follow-up tasks.
+
+### task-9 — Make stock read endpoints public ✅ DONE
+
+**File:** `app/routers/stocks.py`
+
+Removed `current_user: User = Depends(get_current_active_user)` from the five
+read-only endpoints so guests can browse stocks without authentication:
+- `GET /stocks`
+- `GET /stocks/{symbol}`
+- `GET /stocks/{symbol}/quotes/latest`
+- `GET /stocks/{symbol}/prices`
+- `GET /stocks/{symbol}/sync-status`
+
+Write endpoints (`POST /stock-sync-jobs`, `GET /stock-sync-jobs/{id}`) remain
+protected.
+
+### task-10 — StockDetailPage authenticated feature gating ✅ DONE
+
+**File:** `frontend/src/pages/StockDetailPage.tsx`
+
+- Added `useAuthStore` import and `isAuthenticated = !!user`
+- `watchlistsQuery`: added `enabled: isAuthenticated` to prevent firing 401 for guests
+- Auto-sync `useEffect`: added `isAuthenticated` guard
+- "Add to Watchlist" button: shows "Login to add to watchlist" link for guests
+- "Sync Market Data" button: hidden for guests
+- Empty history state: sync/retry buttons hidden for guests; shows "Login to sync" link instead
+
+### task-11 — Logout clears watchlist cache ✅ DONE
+
+**File:** `frontend/src/components/Navbar.tsx`
+
+Added `useQueryClient` and called `queryClient.removeQueries({ queryKey: ["watchlists"] })`
+in the `handleLogout` finally block to prevent stale watchlist data after logout.

@@ -13,6 +13,7 @@ import {
 import { getStockQuote, getStockHistory, getStockSyncStatus, syncStockPrices } from "@/api/stocks";
 import { listWatchlists, addWatchlistItem } from "@/api/watchlists";
 import { getApiErrorMessage } from "@/api/client";
+import { useAuthStore } from "@/stores/authStore";
 import type { StockPrice } from "@/types";
 import { toast } from "sonner";
 import {
@@ -84,6 +85,8 @@ export function StockDetailPage() {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const isAuthenticated = !!user;
 
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -112,6 +115,7 @@ export function StockDetailPage() {
   const watchlistsQuery = useQuery({
     queryKey: ["watchlists"],
     queryFn: listWatchlists,
+    enabled: isAuthenticated,
   });
 
   const syncMutation = useMutation({
@@ -130,10 +134,11 @@ export function StockDetailPage() {
     },
   });
 
-  // Auto-trigger sync once if history is empty and we haven't tried yet
+  // Auto-trigger sync once if history is empty and we haven't tried yet (authenticated only)
   const [autoSyncAttempted, setAutoSyncAttempted] = useState(false);
   useEffect(() => {
     if (
+      isAuthenticated &&
       !autoSyncAttempted &&
       historyQuery.data &&
       historyQuery.data.length === 0 &&
@@ -144,7 +149,7 @@ export function StockDetailPage() {
       setAutoSyncAttempted(true);
       syncMutation.mutate();
     }
-  }, [historyQuery.data, historyQuery.isLoading, autoSyncAttempted, syncMutation]);
+  }, [isAuthenticated, historyQuery.data, historyQuery.isLoading, autoSyncAttempted, syncMutation]);
 
   const addItemMutation = useMutation({
     mutationFn: ({ watchlistId, symbol: s }: { watchlistId: number; symbol: string }) =>
@@ -293,46 +298,58 @@ export function StockDetailPage() {
           <p className="text-muted-foreground">{quote?.name || "Loading..."}</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <button
-              onClick={() => setShowAddMenu(!showAddMenu)}
-              className="flex items-center gap-2 px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors"
+          {isAuthenticated ? (
+            <div className="relative">
+              <button
+                onClick={() => setShowAddMenu(!showAddMenu)}
+                className="flex items-center gap-2 px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Add to Watchlist
+              </button>
+              {showAddMenu && (
+                <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-lg shadow-lg z-10">
+                  <div className="p-2">
+                    {watchlistsQuery.data?.length === 0 && (
+                      <p className="text-xs text-muted-foreground px-2 py-1">
+                        No watchlists.{" "}
+                        <Link to="/watchlists" className="text-accent underline">
+                          Create one
+                        </Link>
+                      </p>
+                    )}
+                    {watchlistsQuery.data?.map((wl) => (
+                      <button
+                        key={wl.id}
+                        onClick={() => addItemMutation.mutate({ watchlistId: wl.id, symbol: symbol! })}
+                        className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-muted transition-colors"
+                      >
+                        {wl.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Link
+              to="/login"
+              className="flex items-center gap-2 px-4 py-2 border border-border bg-card rounded-lg text-sm font-medium text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
             >
               <Plus className="w-4 h-4" />
-              Add to Watchlist
+              Login to add to watchlist
+            </Link>
+          )}
+          {isAuthenticated && (
+            <button
+              onClick={() => syncMutation.mutate()}
+              disabled={syncMutation.isPending}
+              className="flex items-center gap-2 px-4 py-2 border border-border bg-card rounded-lg text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+              Sync Market Data
             </button>
-            {showAddMenu && (
-              <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-lg shadow-lg z-10">
-                <div className="p-2">
-                  {watchlistsQuery.data?.length === 0 && (
-                    <p className="text-xs text-muted-foreground px-2 py-1">
-                      No watchlists.{" "}
-                      <Link to="/watchlists" className="text-accent underline">
-                        Create one
-                      </Link>
-                    </p>
-                  )}
-                  {watchlistsQuery.data?.map((wl) => (
-                    <button
-                      key={wl.id}
-                      onClick={() => addItemMutation.mutate({ watchlistId: wl.id, symbol: symbol! })}
-                      className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-muted transition-colors"
-                    >
-                      {wl.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-          <button
-            onClick={() => syncMutation.mutate()}
-            disabled={syncMutation.isPending}
-            className="flex items-center gap-2 px-4 py-2 border border-border bg-card rounded-lg text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-            Sync Market Data
-          </button>
+          )}
         </div>
       </div>
 
@@ -437,22 +454,30 @@ export function StockDetailPage() {
             ) : syncMutation.isError ? (
               <>
                 <p>Sync failed.</p>
-                <button
-                  onClick={() => syncMutation.mutate()}
-                  className="mt-3 text-accent text-sm font-medium hover:underline"
-                >
-                  Retry sync
-                </button>
+                {isAuthenticated && (
+                  <button
+                    onClick={() => syncMutation.mutate()}
+                    className="mt-3 text-accent text-sm font-medium hover:underline"
+                  >
+                    Retry sync
+                  </button>
+                )}
               </>
             ) : (
               <>
                 <p>No historical data available.</p>
-                <button
-                  onClick={() => syncMutation.mutate()}
-                  className="mt-3 text-accent text-sm font-medium hover:underline"
-                >
-                  Sync historical prices
-                </button>
+                {isAuthenticated ? (
+                  <button
+                    onClick={() => syncMutation.mutate()}
+                    className="mt-3 text-accent text-sm font-medium hover:underline"
+                  >
+                    Sync historical prices
+                  </button>
+                ) : (
+                  <Link to="/login" className="mt-3 inline-block text-accent text-sm font-medium hover:underline">
+                    Login to sync historical prices
+                  </Link>
+                )}
               </>
             )}
           </div>
