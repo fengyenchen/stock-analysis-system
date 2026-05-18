@@ -12,6 +12,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 import twstock
+from twstock.stock import TPEXFetcher, TWSEFetcher
 
 from app.config import settings
 from app.models import Stock, StockPrice, StockSyncStatus
@@ -161,18 +162,11 @@ def sync_stock_list(db: Session) -> int:
 
 # ─── Historical Price Sync ────────────────────────────────
 
-async def _fetch_month_data(symbol: str, year: int, month: int) -> list:
-    """Fetch data for a single month (runs in thread pool)."""
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _fetch_month_sync, symbol, year, month)
-
-
-def _fetch_month_sync(symbol: str, year: int, month: int) -> list:
-    """Synchronous month fetch."""
-    tws = twstock.Stock(symbol)
+def _fetch_month_with_fetcher(fetcher, symbol: str, year: int, month: int) -> list:
+    """Synchronous month fetch using a reusable fetcher."""
     time.sleep(settings.stock_sync_rate_limit_seconds)
-    fetched = tws.fetch(year, month)
-    return fetched if fetched is not None else tws.data
+    result = fetcher.fetch(year, month, symbol)
+    return result.get("data", [])
 
 
 def sync_historical_prices(
@@ -182,16 +176,6 @@ def sync_historical_prices(
     end: Optional[date] = None,
 ) -> StockSyncResult:
     """Fetch and cache historical prices for a stock from twstock by month."""
-    return asyncio.run(async_sync_historical_prices(db, symbol, start, end))
-
-
-async def async_sync_historical_prices(
-    db: Session,
-    symbol: str,
-    start: Optional[date] = None,
-    end: Optional[date] = None,
-) -> StockSyncResult:
-    """Fetch and cache historical prices for a stock from twstock by month (parallel)."""
     stock = db.query(Stock).filter(Stock.symbol == symbol).first()
     if not stock:
         raise ValueError(f"Stock {symbol} not found")
@@ -232,60 +216,76 @@ async def async_sync_historical_prices(
         else sqlite_insert
     )
 
-    sem = asyncio.Semaphore(settings.stock_sync_max_concurrent)
-
-    async def fetch_with_sem(year: int, month: int):
-        async with sem:
-            return await _fetch_month_data(symbol, year, month)
+    # Reusable fetcher — stateless, thread-safe
+    data_source = twstock.codes.get(symbol, {}).get("data_source", "twse")
+    fetcher = TWSEFetcher() if data_source == "twse" else TPEXFetcher()
 
     try:
-        all_data = await asyncio.gather(*[fetch_with_sem(y, m) for y, m in months])
+        all_rows = []
+        if len(months) == 1:
+            rows = _fetch_month_with_fetcher(fetcher, symbol, months[0][0], months[0][1])
+            if rows:
+                all_rows.extend(rows)
+        else:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            with ThreadPoolExecutor(max_workers=settings.stock_sync_max_concurrent) as executor:
+                futures = {
+                    executor.submit(_fetch_month_with_fetcher, fetcher, symbol, year, month): (year, month)
+                    for year, month in months
+                }
+                for future in as_completed(futures):
+                    rows = future.result()
+                    if rows:
+                        all_rows.extend(rows)
 
         seen_dates = set()
         upserted = 0
         skipped = 0
+        values_batch = []
 
-        for rows in all_data:
-            for data in rows:
-                data_date = data.date.date() if isinstance(data.date, datetime) else data.date
-                if data_date < start or data_date > end:
-                    continue
-                if data_date in seen_dates:
-                    skipped += 1
-                    continue
-                seen_dates.add(data_date)
+        for data in all_rows:
+            data_date = data.date.date() if isinstance(data.date, datetime) else data.date
+            if data_date < start or data_date > end:
+                continue
+            if data_date in seen_dates:
+                skipped += 1
+                continue
+            seen_dates.add(data_date)
 
-                open_price = _to_decimal(data.open)
-                high_price = _to_decimal(data.high)
-                low_price = _to_decimal(data.low)
-                close_price = _to_decimal(data.close)
-                if None in (open_price, high_price, low_price, close_price):
-                    skipped += 1
-                    continue
+            open_price = _to_decimal(data.open)
+            high_price = _to_decimal(data.high)
+            low_price = _to_decimal(data.low)
+            close_price = _to_decimal(data.close)
+            if None in (open_price, high_price, low_price, close_price):
+                skipped += 1
+                continue
 
-                values = dict(
-                    stock_id=stock.id,
-                    date=data_date,
-                    open_price=open_price,
-                    high_price=high_price,
-                    low_price=low_price,
-                    close_price=close_price,
-                    volume=_to_int(data.capacity) or 0,
-                    change=_to_decimal(data.change),
-                )
-                stmt = insert_stmt(StockPrice).values(**values).on_conflict_do_update(
-                    index_elements=["stock_id", "date"],
-                    set_={
-                        "open_price": values["open_price"],
-                        "high_price": values["high_price"],
-                        "low_price": values["low_price"],
-                        "close_price": values["close_price"],
-                        "volume": values["volume"],
-                        "change": values["change"],
-                    },
-                )
-                result = db.execute(stmt)
-                upserted += result.rowcount or 0
+            values_batch.append(dict(
+                stock_id=stock.id,
+                date=data_date,
+                open_price=open_price,
+                high_price=high_price,
+                low_price=low_price,
+                close_price=close_price,
+                volume=_to_int(data.capacity) or 0,
+                change=_to_decimal(data.change),
+            ))
+
+        if values_batch:
+            stmt = insert_stmt(StockPrice).values(values_batch).on_conflict_do_update(
+                index_elements=["stock_id", "date"],
+                set_={
+                    "open_price": insert_stmt.excluded.open_price,
+                    "high_price": insert_stmt.excluded.high_price,
+                    "low_price": insert_stmt.excluded.low_price,
+                    "close_price": insert_stmt.excluded.close_price,
+                    "volume": insert_stmt.excluded.volume,
+                    "change": insert_stmt.excluded.change,
+                },
+            )
+            result = db.execute(stmt)
+            upserted = result.rowcount or 0
 
         status.status = "success"
         status.synced_from = start if status.synced_from is None else min(status.synced_from, start)
@@ -314,16 +314,36 @@ async def async_sync_historical_prices(
 
 
 def sync_recent_prices_for_active_stocks(db: Session, lookback_days: Optional[int] = None) -> int:
-    """Refresh recent history for all active stocks after market close."""
+    """Refresh recent history for all active stocks after market close (parallel)."""
     if lookback_days is None:
         lookback_days = settings.stock_daily_sync_lookback_days
     end = _taipei_today()
     start = end - timedelta(days=lookback_days)
-    total = 0
+
     stocks = db.query(Stock).filter(Stock.is_active == True).all()
-    for stock in stocks:
-        result = sync_historical_prices(db, stock.symbol, start=start, end=end)
-        total += result.records_upserted
+    total = 0
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from app.database import SessionLocal
+
+    def _sync_one(symbol: str) -> int:
+        db_thread = SessionLocal()
+        try:
+            result = sync_historical_prices(db_thread, symbol, start=start, end=end)
+            return result.records_upserted
+        except Exception:
+            return 0
+        finally:
+            db_thread.close()
+
+    with ThreadPoolExecutor(max_workers=settings.stock_sync_max_concurrent) as executor:
+        futures = {
+            executor.submit(_sync_one, stock.symbol): stock.symbol
+            for stock in stocks
+        }
+        for future in as_completed(futures):
+            total += future.result()
+
     return total
 
 
@@ -350,6 +370,9 @@ def get_realtime_quote(symbol: str) -> Optional[dict]:
     # Calculate change_percent if missing
     if change_percent is None and change is not None and open_p and open_p > 0:
         change_percent = (change / open_p * 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    if None in (price, open_p, high_p, low_p):
+        return None
 
     return {
         "symbol": info.get("code", symbol),

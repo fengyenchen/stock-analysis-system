@@ -24,6 +24,7 @@ import {
   TrendingDown,
   Calendar,
   BarChart3,
+  Timer,
 } from "lucide-react";
 
 type Resolution = "day" | "week" | "year";
@@ -84,6 +85,7 @@ export function StockDetailPage() {
   const { symbol } = useParams<{ symbol: string }>();
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const syncStartRef = useRef<number | null>(null);
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const isAuthenticated = !!user;
@@ -118,9 +120,17 @@ export function StockDetailPage() {
     enabled: isAuthenticated,
   });
 
+  const [lastSyncDuration, setLastSyncDuration] = useState<number | null>(null);
+
   const syncMutation = useMutation({
-    mutationFn: () => syncStockPrices(symbol!, startDate || undefined, endDate || undefined),
+    mutationFn: () => {
+      syncStartRef.current = Date.now();
+      return syncStockPrices(symbol!, startDate || undefined, endDate || undefined);
+    },
     onSuccess: (data) => {
+      if (syncStartRef.current) {
+        setLastSyncDuration(Date.now() - syncStartRef.current);
+      }
       if (data.status === "failed") {
         toast.error(data.error || "Sync failed");
       } else {
@@ -130,9 +140,35 @@ export function StockDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["stock-sync-status", symbol] });
     },
     onError: (err: unknown) => {
+      if (syncStartRef.current) {
+        setLastSyncDuration(Date.now() - syncStartRef.current);
+      }
       toast.error(getApiErrorMessage(err, "Sync failed"));
     },
   });
+
+  // Sync timer
+  const [elapsedMs, setElapsedMs] = useState(0);
+  useEffect(() => {
+    if (!syncMutation.isPending) {
+      setElapsedMs(0);
+      return;
+    }
+    const start = Date.now();
+    const id = setInterval(() => setElapsedMs(Date.now() - start), 100);
+    return () => clearInterval(id);
+  }, [syncMutation.isPending]);
+
+  function formatDuration(ms: number): string {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    const tenths = Math.floor((ms % 1000) / 100);
+    if (minutes > 0) {
+      return `${minutes}:${seconds.toString().padStart(2, "0")}.${tenths}s`;
+    }
+    return `${seconds}.${tenths}s`;
+  }
 
   // Auto-trigger sync once if history is empty and we haven't tried yet (authenticated only)
   const [autoSyncAttempted, setAutoSyncAttempted] = useState(false);
@@ -347,7 +383,7 @@ export function StockDetailPage() {
               className="flex items-center gap-2 px-4 py-2 border border-border bg-card rounded-lg text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50"
             >
               <RefreshCw className={`w-4 h-4 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-              Sync Market Data
+              {syncMutation.isPending ? `Syncing… ${formatDuration(elapsedMs)}` : "Sync Market Data"}
             </button>
           )}
         </div>
@@ -450,7 +486,10 @@ export function StockDetailPage() {
           <div className="text-center py-12 text-muted-foreground">
             <BarChart3 className="w-8 h-8 mx-auto mb-2 opacity-50" />
             {syncMutation.isPending ? (
-              <p>Syncing historical data…</p>
+              <div className="flex items-center justify-center gap-2">
+                <Timer className="w-4 h-4 animate-pulse" />
+                <p>Syncing historical data… {formatDuration(elapsedMs)}</p>
+              </div>
             ) : syncMutation.isError ? (
               <>
                 <p>Sync failed.</p>
@@ -488,6 +527,11 @@ export function StockDetailPage() {
           className="w-full"
           style={{ height: 520, display: chartData.length > 0 ? "block" : "none" }}
         />
+        {lastSyncDuration !== null && chartData.length > 0 && (
+          <p className="text-xs text-muted-foreground mt-2 text-right">
+            Last sync took {formatDuration(lastSyncDuration)}
+          </p>
+        )}
       </div>
     </div>
   );
