@@ -194,19 +194,20 @@ class TestSyncHistoricalPrices:
             "Data",
             ["date", "capacity", "turnover", "open", "high", "low", "close", "change", "transaction"],
         )
-        mock_instance = MagicMock()
-        mock_instance.data = [
-            Data(date=date(2024, 1, 5), capacity=100000, turnover=80000000, open=800.0, high=810.0, low=795.0, close=805.0, change=5.0, transaction=5000),
-        ]
-        mock_instance.fetch.return_value = mock_instance.data
+        mock_fetcher = MagicMock()
+        mock_fetcher.fetch.return_value = {
+            "data": [
+                Data(date=date(2024, 1, 5), capacity=100000, turnover=80000000, open=800.0, high=810.0, low=795.0, close=805.0, change=5.0, transaction=5000),
+            ],
+        }
 
-        with patch("app.services.stock_data.twstock.Stock", return_value=mock_instance):
+        with patch("app.services.stock_data.TWSEFetcher", return_value=mock_fetcher), patch("app.services.stock_data.time.sleep"):
             result = sync_historical_prices(db_session, sample_stocks[0].symbol, start=date(2024, 1, 1), end=date(2024, 1, 31))
             assert result.records_upserted >= 1
             assert result.symbol == sample_stocks[0].symbol
 
     def test_failed_sync_updates_status(self, db_session, sample_stocks):
-        with patch("app.services.stock_data.twstock.Stock", side_effect=Exception("Network error")):
+        with patch("app.services.stock_data.TWSEFetcher", side_effect=Exception("Network error")):
             with pytest.raises(Exception, match="Network error"):
                 sync_historical_prices(db_session, sample_stocks[0].symbol, start=date(2024, 1, 1), end=date(2024, 1, 31))
 
@@ -227,15 +228,12 @@ class TestSyncHistoricalPrices:
             (2024, 3): [Data(date=date(2024, 3, 6), capacity=110000, turnover=85000000, open=815.0, high=825.0, low=805.0, close=820.0, change=5.0, transaction=5500)],
         }
 
-        def make_mock(symbol, **kwargs):
-            mock_instance = MagicMock()
-            def fetch(year, month):
-                return month_data.get((year, month), [])
-            mock_instance.fetch = fetch
-            mock_instance.data = []
-            return mock_instance
+        mock_fetcher = MagicMock()
+        def fetch(year, month, sid):
+            return {"data": month_data.get((year, month), [])}
+        mock_fetcher.fetch = fetch
 
-        with patch("app.services.stock_data.twstock.Stock", side_effect=make_mock):
+        with patch("app.services.stock_data.TWSEFetcher", return_value=mock_fetcher), patch("app.services.stock_data.time.sleep"):
             result = sync_historical_prices(db_session, sample_stocks[0].symbol, start=date(2024, 1, 1), end=date(2024, 3, 31))
             assert result.records_upserted == 3
             assert result.symbol == sample_stocks[0].symbol

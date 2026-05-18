@@ -216,11 +216,12 @@ def sync_historical_prices(
         else sqlite_insert
     )
 
-    # Reusable fetcher — stateless, thread-safe
-    data_source = twstock.codes.get(symbol, {}).get("data_source", "twse")
-    fetcher = TWSEFetcher() if data_source == "twse" else TPEXFetcher()
-
     try:
+        # Reusable fetcher — stateless, thread-safe
+        code_info = twstock.codes.get(symbol)
+        data_source = getattr(code_info, "data_source", "twse") if code_info else "twse"
+        fetcher = TWSEFetcher() if data_source == "twse" else TPEXFetcher()
+
         all_rows = []
         if len(months) == 1:
             rows = _fetch_month_with_fetcher(fetcher, symbol, months[0][0], months[0][1])
@@ -273,15 +274,16 @@ def sync_historical_prices(
             ))
 
         if values_batch:
-            stmt = insert_stmt(StockPrice).values(values_batch).on_conflict_do_update(
+            stmt = insert_stmt(StockPrice).values(values_batch)
+            stmt = stmt.on_conflict_do_update(
                 index_elements=["stock_id", "date"],
                 set_={
-                    "open_price": insert_stmt.excluded.open_price,
-                    "high_price": insert_stmt.excluded.high_price,
-                    "low_price": insert_stmt.excluded.low_price,
-                    "close_price": insert_stmt.excluded.close_price,
-                    "volume": insert_stmt.excluded.volume,
-                    "change": insert_stmt.excluded.change,
+                    "open_price": stmt.excluded.open_price,
+                    "high_price": stmt.excluded.high_price,
+                    "low_price": stmt.excluded.low_price,
+                    "close_price": stmt.excluded.close_price,
+                    "volume": stmt.excluded.volume,
+                    "change": stmt.excluded.change,
                 },
             )
             result = db.execute(stmt)

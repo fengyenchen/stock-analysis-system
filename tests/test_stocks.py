@@ -372,15 +372,16 @@ class TestStockRecommendation:
 # ─── Sync ─────────────────────────────────────────────────
 
 class TestStockSync:
-    @patch("app.services.stock_data.twstock.Stock")
-    def test_sync_success(self, mock_stock_class, auth_client, sample_stocks, db_session):
+    @patch("app.services.stock_data.TWSEFetcher")
+    def test_sync_success(self, mock_fetcher_class, auth_client, sample_stocks, db_session):
         from collections import namedtuple
         Data = namedtuple("Data", ["date", "capacity", "turnover", "open", "high", "low", "close", "change", "transaction"])
-        mock_instance = mock_stock_class.return_value
-        mock_instance.data = [
-            Data(date=date(2024, 1, 1), capacity=100000, turnover=80000000, open=800.0, high=810.0, low=795.0, close=805.0, change=5.0, transaction=5000),
-        ]
-        mock_instance.fetch.return_value = mock_instance.data
+        mock_fetcher = mock_fetcher_class.return_value
+        mock_fetcher.fetch.return_value = {
+            "data": [
+                Data(date=date(2024, 1, 1), capacity=100000, turnover=80000000, open=800.0, high=810.0, low=795.0, close=805.0, change=5.0, transaction=5000),
+            ],
+        }
 
         response = auth_client.post(
             "/api/v1/stock-sync-jobs",
@@ -397,8 +398,8 @@ class TestStockSync:
         assert job_response.status_code == status.HTTP_200_OK
         assert job_response.json()["id"] == data["id"]
 
-    @patch("app.services.stock_data.twstock.Stock")
-    def test_sync_ignores_duplicate_prices(self, mock_stock_class, auth_client, sample_stocks, db_session):
+    @patch("app.services.stock_data.TWSEFetcher")
+    def test_sync_ignores_duplicate_prices(self, mock_fetcher_class, auth_client, sample_stocks, db_session):
         from collections import namedtuple
         Data = namedtuple(
             "Data",
@@ -418,43 +419,44 @@ class TestStockSync:
         )
         db_session.commit()
 
-        mock_instance = mock_stock_class.return_value
-        mock_instance.data = [
-            Data(
-                date=date(2024, 1, 1),
-                capacity=100000,
-                turnover=80000000,
-                open=800.0,
-                high=810.0,
-                low=795.0,
-                close=805.0,
-                change=5.0,
-                transaction=5000,
-            ),
-            Data(
-                date=date(2024, 1, 2),
-                capacity=120000,
-                turnover=96000000,
-                open=805.0,
-                high=815.0,
-                low=800.0,
-                close=810.0,
-                change=5.0,
-                transaction=6000,
-            ),
-            Data(
-                date=date(2024, 1, 2),
-                capacity=120000,
-                turnover=96000000,
-                open=805.0,
-                high=815.0,
-                low=800.0,
-                close=810.0,
-                change=5.0,
-                transaction=6000,
-            ),
-        ]
-        mock_instance.fetch.return_value = mock_instance.data
+        mock_fetcher = mock_fetcher_class.return_value
+        mock_fetcher.fetch.return_value = {
+            "data": [
+                Data(
+                    date=date(2024, 1, 1),
+                    capacity=100000,
+                    turnover=80000000,
+                    open=800.0,
+                    high=810.0,
+                    low=795.0,
+                    close=805.0,
+                    change=5.0,
+                    transaction=5000,
+                ),
+                Data(
+                    date=date(2024, 1, 2),
+                    capacity=120000,
+                    turnover=96000000,
+                    open=805.0,
+                    high=815.0,
+                    low=800.0,
+                    close=810.0,
+                    change=5.0,
+                    transaction=6000,
+                ),
+                Data(
+                    date=date(2024, 1, 2),
+                    capacity=120000,
+                    turnover=96000000,
+                    open=805.0,
+                    high=815.0,
+                    low=800.0,
+                    close=810.0,
+                    change=5.0,
+                    transaction=6000,
+                ),
+            ],
+        }
 
         response = auth_client.post(
             "/api/v1/stock-sync-jobs",
