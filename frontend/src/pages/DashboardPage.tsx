@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/authStore";
 import { listWatchlists } from "@/api/watchlists";
-import { Search, TrendingUp, List, ChevronRight, BarChart2 } from "lucide-react";
+import { Search, List, ChevronRight, BarChart2, Sparkles, BrainCircuit, Activity } from "lucide-react";
 
 export function DashboardPage() {
   const { isAuthenticated } = useAuthStore();
@@ -30,16 +30,9 @@ export function DashboardPage() {
     }
   }, [watchlists, primaryWlId]);
 
-  // Auto-select first watchlist when none is pinned
-  useEffect(() => {
-    if (watchlists && watchlists.length > 0 && !primaryWlId) {
-      const id = watchlists[0].id.toString();
-      setPrimaryWlId(id);
-      localStorage.setItem("primaryWatchlistId", id);
-    }
-  }, [watchlists, primaryWlId]);
-
-  const primaryWl = watchlists?.find((wl) => wl.id.toString() === primaryWlId) ?? null;
+  const selectedWl = watchlists?.find((wl) => wl.id.toString() === primaryWlId) ?? null;
+  const primaryWl = selectedWl ?? watchlists?.[0] ?? null;
+  const selectedWlId = selectedWl?.id.toString() ?? primaryWl?.id.toString() ?? "";
   const showHeroSearch =
     !isAuthenticated || wlLoading || !primaryWl || primaryWl.items.length === 0;
 
@@ -117,7 +110,7 @@ export function DashboardPage() {
                   </div>
                   {watchlists && watchlists.length > 1 && (
                     <select
-                      value={primaryWlId ?? ""}
+                      value={selectedWlId}
                       onChange={(e) => handleWatchlistChange(e.target.value)}
                       className="text-sm px-2 py-1 rounded-lg border border-border bg-muted focus:outline-none focus:ring-2 focus:ring-accent"
                     >
@@ -166,41 +159,54 @@ export function DashboardPage() {
           </div>
         </div>
 
-        {/* Right panel — Quick Links */}
+        {/* Right panel — AI Insights */}
         <div>
-          <div className="bg-card border border-border rounded-xl p-6 h-full space-y-4">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-accent" />
-              <h2 className="text-base font-semibold text-primary">Quick Links</h2>
+          <div className="bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 border border-indigo-100 rounded-xl p-6 h-full shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+              <BrainCircuit className="w-32 h-32 text-indigo-500" />
             </div>
-            <div className="space-y-2">
-              <Link
-                to="/stocks"
-                className="flex items-center gap-2 p-3 rounded-lg border border-border hover:bg-muted transition-colors group"
-              >
-                <Search className="w-4 h-4 text-accent flex-shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-primary">Search Stocks</p>
-                  <p className="text-xs text-muted-foreground">Browse TWSE & TPEx listings</p>
+
+            <div className="relative z-10 flex h-full flex-col">
+              <div className="flex items-center gap-2 mb-5">
+                <div className="p-1.5 bg-indigo-500 rounded-lg shadow-sm">
+                  <Sparkles className="w-4 h-4 text-white" />
                 </div>
-              </Link>
-              <Link
-                to="/watchlists"
-                className="flex items-center gap-2 p-3 rounded-lg border border-border hover:bg-muted transition-colors group"
-              >
-                <List className="w-4 h-4 text-accent flex-shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-primary">Watchlists</p>
-                  <p className="text-xs text-muted-foreground">
-                    {isAuthenticated ? "Manage your stock watchlists" : "Login to track stocks"}
+                <h2 className="text-base font-semibold text-indigo-950">AI 交易洞察</h2>
+              </div>
+
+              <div className="space-y-3 flex-1">
+                <div className="bg-white/60 backdrop-blur-sm rounded-lg p-4 border border-white shadow-sm">
+                  <h3 className="text-xs font-bold text-indigo-800 uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <Activity className="w-3 h-3" /> Watchlist Summary
+                  </h3>
+                  <p className="text-sm text-indigo-950 leading-relaxed font-medium">
+                    {!isAuthenticated
+                      ? "登入後可根據你的觀察清單產生個人化摘要。"
+                      : primaryWl && primaryWl.items.length > 0
+                        ? `目前觀察清單「${primaryWl.name}」包含 ${primaryWl.items.length} 檔標的，可作為後續分析範圍。`
+                        : "目前尚未加入觀察標的，建立清單後即可開始累積分析脈絡。"}
                   </p>
                 </div>
-              </Link>
+
+                <div className="bg-white/60 backdrop-blur-sm rounded-lg p-4 border border-white shadow-sm">
+                  <h3 className="text-xs font-bold text-indigo-800 uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <BrainCircuit className="w-3 h-3" /> Analysis Status
+                  </h3>
+                  <p className="text-sm text-indigo-950 leading-relaxed font-medium">
+                    模擬 AI 分析面板已啟用。此區塊目前僅呈現產品體驗，不構成任何投資建議。
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-5 mt-auto flex items-center justify-between">
+                <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">
+                  Preview
+                </span>
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-500 uppercase tracking-widest bg-white/60 px-2 py-1 rounded-md border border-indigo-100">
+                  <Sparkles className="w-3 h-3" /> Simulated
+                </span>
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground pt-2 border-t border-border">
-              All prices are delayed data sourced from twstock. For real-time data,
-              visit the stock detail page.
-            </p>
           </div>
         </div>
       </div>
