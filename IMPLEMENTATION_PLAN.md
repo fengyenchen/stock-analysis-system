@@ -410,7 +410,7 @@ export async function resetPassword(data: PasswordResetConfirmRequest): Promise<
 
 ---
 
-### task-6 — DashboardPage redesign (no mock data)
+### task-6 — DashboardPage redesign (no mock data) ✅ DONE
 
 **Scope:** Redesign the homepage with the improved layout from PR #10 but
 without any fake/mock data. Depends on task-3 (guest mode routing).
