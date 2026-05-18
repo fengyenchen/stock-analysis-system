@@ -511,7 +511,7 @@ visibleResults: filteredResults.slice(0, visibleCount)   — rendered via infini
 
 ---
 
-### task-8 — StockDetailPage refinements
+### task-8 — StockDetailPage refinements ✅ DONE
 
 **Scope:** Remove mock history, restore removed features, fix lost error handling.
 Depends on task-3 (guest routing).

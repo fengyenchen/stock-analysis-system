@@ -12,6 +12,7 @@ import {
 } from "lightweight-charts";
 import { getStockQuote, getStockHistory, getStockSyncStatus, syncStockPrices } from "@/api/stocks";
 import { listWatchlists, addWatchlistItem } from "@/api/watchlists";
+import { getApiErrorMessage } from "@/api/client";
 import type { StockPrice } from "@/types";
 import { toast } from "sonner";
 import {
@@ -124,8 +125,8 @@ export function StockDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["stock-history", symbol] });
       queryClient.invalidateQueries({ queryKey: ["stock-sync-status", symbol] });
     },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.detail || "Sync failed");
+    onError: (err: unknown) => {
+      toast.error(getApiErrorMessage(err, "Sync failed"));
     },
   });
 
@@ -153,8 +154,8 @@ export function StockDetailPage() {
       setShowAddMenu(false);
       queryClient.invalidateQueries({ queryKey: ["watchlists"] });
     },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.detail || "Failed to add");
+    onError: (err: unknown) => {
+      toast.error(getApiErrorMessage(err, "Failed to add to watchlist"));
     },
   });
 
@@ -173,12 +174,12 @@ export function StockDetailPage() {
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { color: "#ffffff" },
+        background: { color: "transparent" },
         textColor: "#0f172a",
       },
       grid: {
-        vertLines: { color: "#e2e8f0" },
-        horzLines: { color: "#e2e8f0" },
+        vertLines: { color: "rgba(226,232,240,0.4)" },
+        horzLines: { color: "rgba(226,232,240,0.4)" },
       },
       rightPriceScale: {
         borderColor: "#e2e8f0",
@@ -259,6 +260,7 @@ export function StockDetailPage() {
   const quote = quoteQuery.data;
   const isUp = quote?.change ? parseFloat(quote.change) >= 0 : true;
   const syncStatus = syncStatusQuery.data;
+  const isETF = symbol ? (symbol.startsWith("00") || symbol.length >= 5) : false;
 
   const resolutions: { label: string; value: Resolution }[] = [
     { label: "Day", value: "day" },
@@ -274,7 +276,7 @@ export function StockDetailPage() {
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
-          Back
+          Back to Market
         </Link>
       </div>
 
@@ -282,6 +284,11 @@ export function StockDetailPage() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-primary">{symbol}</h1>
+            {isETF && (
+              <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-xs font-medium">
+                ETF
+              </span>
+            )}
           </div>
           <p className="text-muted-foreground">{quote?.name || "Loading..."}</p>
         </div>
@@ -324,7 +331,7 @@ export function StockDetailPage() {
             className="flex items-center gap-2 px-4 py-2 border border-border bg-card rounded-lg text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-            Sync
+            Sync Market Data
           </button>
         </div>
       </div>
