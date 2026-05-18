@@ -350,7 +350,7 @@ POST /api/v1/password-resets
 
 ---
 
-### task-5 — Frontend: password reset pages
+### task-5 — Frontend: password reset pages ✅ DONE
 
 **Scope:** Add Forgot Password and Reset Password pages to the frontend. Depends
 on task-2 (types) and task-4 (backend endpoints must exist).
