@@ -161,6 +161,20 @@ def sync_stock_list(db: Session) -> int:
 
 # ─── Historical Price Sync ────────────────────────────────
 
+async def _fetch_month_data(symbol: str, year: int, month: int) -> list:
+    """Fetch data for a single month (runs in thread pool)."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _fetch_month_sync, symbol, year, month)
+
+
+def _fetch_month_sync(symbol: str, year: int, month: int) -> list:
+    """Synchronous month fetch."""
+    tws = twstock.Stock(symbol)
+    time.sleep(settings.stock_sync_rate_limit_seconds)
+    fetched = tws.fetch(year, month)
+    return fetched if fetched is not None else tws.data
+
+
 def sync_historical_prices(
     db: Session,
     symbol: str,
@@ -168,6 +182,16 @@ def sync_historical_prices(
     end: Optional[date] = None,
 ) -> StockSyncResult:
     """Fetch and cache historical prices for a stock from twstock by month."""
+    return asyncio.run(async_sync_historical_prices(db, symbol, start, end))
+
+
+async def async_sync_historical_prices(
+    db: Session,
+    symbol: str,
+    start: Optional[date] = None,
+    end: Optional[date] = None,
+) -> StockSyncResult:
+    """Fetch and cache historical prices for a stock from twstock by month (parallel)."""
     stock = db.query(Stock).filter(Stock.symbol == symbol).first()
     if not stock:
         raise ValueError(f"Stock {symbol} not found")
@@ -199,22 +223,29 @@ def sync_historical_prices(
     status.last_error = None
     db.commit()
 
-    upserted = 0
-    skipped = 0
-    months_requested = 0
+    months = list(_iter_months(start, end))
+    months_requested = len(months)
+
     insert_stmt = (
         postgresql_insert
         if db.get_bind().dialect.name == "postgresql"
         else sqlite_insert
     )
+
+    sem = asyncio.Semaphore(settings.stock_sync_max_concurrent)
+
+    async def fetch_with_sem(year: int, month: int):
+        async with sem:
+            return await _fetch_month_data(symbol, year, month)
+
     try:
-        tws = twstock.Stock(symbol)
+        all_data = await asyncio.gather(*[fetch_with_sem(y, m) for y, m in months])
+
         seen_dates = set()
-        for year, month in _iter_months(start, end):
-            months_requested += 1
-            _rate_limit()
-            fetched = tws.fetch(year, month)
-            rows = fetched if fetched is not None else tws.data
+        upserted = 0
+        skipped = 0
+
+        for rows in all_data:
             for data in rows:
                 data_date = data.date.date() if isinstance(data.date, datetime) else data.date
                 if data_date < start or data_date > end:
@@ -341,17 +372,6 @@ async def async_get_realtime_quote(symbol: str) -> Optional[dict]:
     """Async wrapper for get_realtime_quote using thread pool."""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, get_realtime_quote, symbol)
-
-
-async def async_sync_historical_prices(
-    db: Session,
-    symbol: str,
-    start: Optional[date] = None,
-    end: Optional[date] = None,
-) -> StockSyncResult:
-    """Async wrapper for sync_historical_prices using thread pool."""
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, sync_historical_prices, db, symbol, start, end)
 
 
 async def async_sync_stock_list(db: Session) -> int:
