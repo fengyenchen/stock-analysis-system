@@ -75,6 +75,25 @@ export interface StockSyncStatus {
   records_upserted: number;
 }
 
+export interface RecommendationIndicators {
+  close: string;
+  ma5?: string | null;
+  ma20?: string | null;
+  ma60?: string | null;
+  rsi14?: string | null;
+  volume_ratio?: string | null;
+}
+
+export interface StockRecommendation {
+  symbol: string;
+  recommendation: "buy" | "hold" | "sell";
+  confidence: number;
+  as_of?: string | null;
+  indicators: RecommendationIndicators;
+  reasons: string[];
+  disclaimer: string;
+}
+
 export interface StockSyncJob {
   id: number;
   symbol: string;
@@ -89,6 +108,27 @@ export interface StockSyncJob {
   created_at: string;
   started_at?: string | null;
   completed_at?: string | null;
+}
+
+export interface StockTargetPrice {
+  id: number;
+  analyst: string;
+  target_price: string;
+  rating: string;
+  report_date: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PriceAlert {
+  id: number;
+  symbol: string;
+  condition: "above" | "below";
+  target_price: string;
+  is_active: boolean;
+  triggered_at?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Watchlist {

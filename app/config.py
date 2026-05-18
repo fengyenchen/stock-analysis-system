@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # Application
-    app_name: str = "Auth Service"
+    app_name: str = "Taiwan Stock Analysis API"
     environment: str = "development"
     debug: bool = False
 

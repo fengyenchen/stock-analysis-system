@@ -1,15 +1,29 @@
 import os
+import uuid
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from sqlalchemy import text
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
-from app.routers import auth, stocks, watchlists
+from app.database import engine, get_db
+from app.limiter import limiter
+from app.routers import alerts, auth, stocks, target_prices, watchlists
 from app.scheduler import start_scheduler, stop_scheduler
 
-
 API_V1_PREFIX = "/api/v1"
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if settings.environment != "test" and settings.stock_daily_sync_enabled:
+        start_scheduler()
+    yield
+    stop_scheduler()
 
 
 app = FastAPI(
@@ -17,7 +31,19 @@ app = FastAPI(
     description="Taiwan Stock Market Data Platform with JWT Authentication",
     version="2.0.0",
     debug=settings.debug,
+    lifespan=lifespan,
 )
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Request ID middleware
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    request.state.request_id = request_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 # CORS
 origins = [origin.strip() for origin in settings.cors_origins.split(",")]
@@ -34,23 +60,20 @@ app.include_router(auth.router, prefix=API_V1_PREFIX)
 app.include_router(stocks.router, prefix=API_V1_PREFIX)
 app.include_router(stocks.sync_jobs_router, prefix=API_V1_PREFIX)
 app.include_router(watchlists.router, prefix=API_V1_PREFIX)
-
-
-@app.on_event("startup")
-def startup_event():
-    if settings.environment == "test" or not settings.stock_daily_sync_enabled:
-        return
-    start_scheduler()
-
-
-@app.on_event("shutdown")
-def shutdown_event():
-    stop_scheduler()
+app.include_router(target_prices.router, prefix=API_V1_PREFIX)
+app.include_router(alerts.router, prefix=API_V1_PREFIX)
 
 
 @app.get("/health", tags=["Health"])
-def health_check():
-    return {"status": "healthy"}
+async def health_check(db = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "healthy", "database": "connected"}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"status": "unhealthy", "database": str(exc)},
+        )
 
 
 @app.api_route("/api", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)

@@ -188,6 +188,54 @@ class StockQuoteRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ─── Target Price ────────────────────────────────────────
+
+class StockTargetPriceCreate(BaseModel):
+    analyst: str = Field(..., min_length=1, max_length=100)
+    target_price: Decimal = Field(..., gt=0)
+    rating: str = Field(..., pattern=r"^(buy|hold|sell|strong_buy|strong_sell)$")
+    report_date: date
+
+
+class StockTargetPriceRead(BaseModel):
+    id: int
+    analyst: str
+    target_price: Decimal
+    rating: str
+    report_date: date
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ─── Price Alert ─────────────────────────────────────────
+
+class PriceAlertCreate(BaseModel):
+    symbol: str = Field(..., min_length=1, max_length=10)
+    condition: Literal["above", "below"] = "above"
+    target_price: Decimal = Field(..., gt=0)
+
+
+class PriceAlertRead(BaseModel):
+    id: int
+    symbol: str
+    condition: str
+    target_price: Decimal
+    is_active: bool
+    triggered_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PriceAlertUpdate(BaseModel):
+    is_active: Optional[bool] = None
+    target_price: Optional[Decimal] = None
+    condition: Optional[Literal["above", "below"]] = None
+
+
 # ─── Watchlist ───────────────────────────────────────────
 
 class WatchlistBase(BaseModel):

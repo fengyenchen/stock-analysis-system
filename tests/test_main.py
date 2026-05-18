@@ -13,7 +13,7 @@ class TestHealth:
         with TestClient(app) as client:
             response = client.get("/health")
             assert response.status_code == status.HTTP_200_OK
-            assert response.json() == {"status": "healthy"}
+            assert response.json() == {"status": "healthy", "database": "connected"}
 
 
 class TestStartup:

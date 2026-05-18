@@ -3,8 +3,10 @@ import type {
   Stock,
   StockPrice,
   StockQuote,
+  StockRecommendation,
   StockSyncJob,
   StockSyncStatus,
+  StockTargetPrice,
 } from "@/types";
 
 export async function searchStocks(q: string): Promise<Stock[]> {
@@ -35,8 +37,25 @@ export async function getStockHistory(
   return res.data;
 }
 
+export async function exportStockHistoryCSV(
+  symbol: string,
+  start?: string,
+  end?: string
+): Promise<Blob> {
+  const res = await apiClient.get(`stocks/${symbol}/prices`, {
+    params: { start, end, format: "csv" },
+    responseType: "blob",
+  });
+  return res.data;
+}
+
 export async function getStockSyncStatus(symbol: string): Promise<StockSyncStatus> {
   const res = await apiClient.get<StockSyncStatus>(`stocks/${symbol}/sync-status`);
+  return res.data;
+}
+
+export async function getStockRecommendation(symbol: string): Promise<StockRecommendation> {
+  const res = await apiClient.get<StockRecommendation>(`stocks/${symbol}/recommendation`);
   return res.data;
 }
 
@@ -50,5 +69,10 @@ export async function syncStockPrices(
     start,
     end,
   });
+  return res.data;
+}
+
+export async function getTargetPrices(symbol: string): Promise<StockTargetPrice[]> {
+  const res = await apiClient.get<StockTargetPrice[]>(`stocks/${symbol}/target-prices`);
   return res.data;
 }

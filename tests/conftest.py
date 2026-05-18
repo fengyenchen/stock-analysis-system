@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Keep application startup deterministic under pytest.
 os.environ["DEBUG"] = "false"
+os.environ["ENVIRONMENT"] = "test"
 os.environ["STOCK_DAILY_SYNC_ENABLED"] = "false"
 
 import pytest

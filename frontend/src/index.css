@@ -12,6 +12,22 @@
   --color-card-foreground: #0f172a;
   --color-danger: #ef4444;
   --color-success: #22c55e;
+  --color-background: #f8fafc;
+}
+
+.dark {
+  --color-primary: #f8fafc;
+  --color-primary-foreground: #0f172a;
+  --color-accent: #60a5fa;
+  --color-accent-foreground: #0f172a;
+  --color-muted: #1e293b;
+  --color-muted-foreground: #94a3b8;
+  --color-border: #334155;
+  --color-card: #0f172a;
+  --color-card-foreground: #f8fafc;
+  --color-danger: #f87171;
+  --color-success: #4ade80;
+  --color-background: #020617;
 }
 
 html, body, #root {
@@ -20,8 +36,8 @@ html, body, #root {
 
 body {
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  background-color: #f8fafc;
-  color: #0f172a;
+  background-color: var(--color-background);
+  color: var(--color-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

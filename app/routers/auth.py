@@ -2,13 +2,14 @@ import hashlib
 import secrets
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_active_user
+from app.limiter import conditional_limit
 from app.models import User, TokenBlacklist, PasswordResetToken
 from app.schemas import (
     LoginRequest,
@@ -31,7 +32,8 @@ router = APIRouter(tags=["Authentication"])
 
 
 @router.post("/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)
-def register(user_in: UserCreate, db: Session = Depends(get_db)):
+@conditional_limit("5/minute")
+def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db)):
     # Check existing username
     existing_user = db.query(User).filter(User.username == user_in.username).first()
     if existing_user:
@@ -61,7 +63,8 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/sessions", response_model=TokenPair)
-def login(credentials: LoginRequest, db: Session = Depends(get_db)):
+@conditional_limit("10/minute")
+def login(request: Request, credentials: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == credentials.username).first()
     if not user or not verify_password(credentials.password, user.hashed_password):
         raise HTTPException(
@@ -123,8 +126,9 @@ def logout(
 
 
 @router.post("/token-refreshes", response_model=TokenPair)
-def refresh(request: RefreshRequest, db: Session = Depends(get_db)):
-    payload = decode_token(request.refresh_token)
+@conditional_limit("10/minute")
+def refresh(request: Request, request_data: RefreshRequest, db: Session = Depends(get_db)):
+    payload = decode_token(request_data.refresh_token)
     if payload is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -182,7 +186,8 @@ def get_me(current_user: User = Depends(get_current_active_user)):
 
 
 @router.post("/password-reset-requests", status_code=status.HTTP_200_OK)
-def request_password_reset(body: PasswordResetRequestCreate, db: Session = Depends(get_db)):
+@conditional_limit("3/minute")
+def request_password_reset(request: Request, body: PasswordResetRequestCreate, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == body.email).first()
     if user:
         plain_token = secrets.token_urlsafe(32)
@@ -202,7 +207,8 @@ def request_password_reset(body: PasswordResetRequestCreate, db: Session = Depen
 
 
 @router.post("/password-resets", status_code=status.HTTP_200_OK)
-def reset_password(body: PasswordResetConfirm, db: Session = Depends(get_db)):
+@conditional_limit("5/minute")
+def reset_password(request: Request, body: PasswordResetConfirm, db: Session = Depends(get_db)):
     token_hash = hashlib.sha256(body.token.encode()).hexdigest()
     reset_token = db.query(PasswordResetToken).filter(
         PasswordResetToken.token_hash == token_hash

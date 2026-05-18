@@ -10,7 +10,7 @@ import {
   type HistogramData,
   type Time,
 } from "lightweight-charts";
-import { getStockQuote, getStockHistory, getStockSyncStatus, syncStockPrices } from "@/api/stocks";
+import { getStockQuote, getStockHistory, getStockSyncStatus, getStockRecommendation, syncStockPrices } from "@/api/stocks";
 import { listWatchlists, addWatchlistItem } from "@/api/watchlists";
 import { getApiErrorMessage } from "@/api/client";
 import { useAuthStore } from "@/stores/authStore";
@@ -25,6 +25,7 @@ import {
   Calendar,
   BarChart3,
   Timer,
+  Brain,
 } from "lucide-react";
 
 type Resolution = "day" | "week" | "year";
@@ -118,6 +119,12 @@ export function StockDetailPage() {
     queryKey: ["watchlists"],
     queryFn: listWatchlists,
     enabled: isAuthenticated,
+  });
+
+  const recommendationQuery = useQuery({
+    queryKey: ["stock-recommendation", symbol],
+    queryFn: () => getStockRecommendation(symbol!),
+    enabled: !!symbol,
   });
 
   const [lastSyncDuration, setLastSyncDuration] = useState<number | null>(null);
@@ -330,6 +337,17 @@ export function StockDetailPage() {
                 ETF
               </span>
             )}
+            {recommendationQuery.data && (
+              <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold uppercase tracking-wide border ${
+                recommendationQuery.data.recommendation === "buy"
+                  ? "bg-emerald-500 text-white border-emerald-600"
+                  : recommendationQuery.data.recommendation === "sell"
+                  ? "bg-rose-500 text-white border-rose-600"
+                  : "bg-amber-500 text-white border-amber-600"
+              }`}>
+                {recommendationQuery.data.recommendation}
+              </span>
+            )}
           </div>
           <p className="text-muted-foreground">{quote?.name || "Loading..."}</p>
         </div>
@@ -416,6 +434,68 @@ export function StockDetailPage() {
             </p>
             <p className="text-xs text-muted-foreground">Open: {quote.open}</p>
           </div>
+        </div>
+      )}
+
+      {recommendationQuery.data && (
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Brain className="w-5 h-5 text-accent" />
+            <h2 className="text-lg font-semibold text-primary">Technical Signal</h2>
+          </div>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold uppercase tracking-wide border ${
+              recommendationQuery.data.recommendation === "buy"
+                ? "bg-emerald-500 text-white border-emerald-600"
+                : recommendationQuery.data.recommendation === "sell"
+                ? "bg-rose-500 text-white border-rose-600"
+                : "bg-amber-500 text-white border-amber-600"
+            }`}>
+              {recommendationQuery.data.recommendation}
+            </span>
+            <div className="flex items-center gap-2 flex-1">
+              <span className="text-xs text-muted-foreground">Confidence</span>
+              <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden max-w-[200px]">
+                <div
+                  className={`h-full rounded-full ${
+                    recommendationQuery.data.recommendation === "buy"
+                      ? "bg-emerald-500"
+                      : recommendationQuery.data.recommendation === "sell"
+                      ? "bg-rose-500"
+                      : "bg-amber-500"
+                  }`}
+                  style={{ width: `${recommendationQuery.data.confidence}%` }}
+                />
+              </div>
+              <span className="text-sm font-medium">{recommendationQuery.data.confidence}%</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+            {[
+              { label: "Close", value: recommendationQuery.data.indicators.close },
+              { label: "MA5", value: recommendationQuery.data.indicators.ma5 },
+              { label: "MA20", value: recommendationQuery.data.indicators.ma20 },
+              { label: "MA60", value: recommendationQuery.data.indicators.ma60 },
+              { label: "RSI14", value: recommendationQuery.data.indicators.rsi14 },
+            ].map((item) => (
+              <div key={item.label} className="bg-muted rounded-lg p-2 text-center">
+                <p className="text-[10px] text-muted-foreground uppercase">{item.label}</p>
+                <p className="text-sm font-semibold text-primary">{item.value ?? "-"}</p>
+              </div>
+            ))}
+          </div>
+
+          <ul className="space-y-1 mb-3">
+            {recommendationQuery.data.reasons.map((reason, i) => (
+              <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
+                <span className="mt-1.5 w-1 h-1 rounded-full bg-accent shrink-0" />
+                {reason}
+              </li>
+            ))}
+          </ul>
+
+          <p className="text-[10px] text-muted-foreground italic">{recommendationQuery.data.disclaimer}</p>
         </div>
       )}
 

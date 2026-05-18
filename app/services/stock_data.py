@@ -1,5 +1,6 @@
 import asyncio
 import threading
+import logging
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -16,6 +17,18 @@ from twstock.stock import TPEXFetcher, TWSEFetcher
 
 from app.config import settings
 from app.models import Stock, StockPrice, StockSyncStatus
+
+logger = logging.getLogger(__name__)
+
+# Monkey-patch twstock to reuse a single requests.Session with connection pooling.
+# The default get_session() creates a new Session per call → no keep-alive.
+import requests
+import twstock.proxy as _twstock_proxy
+
+_shared_session = requests.Session()
+_shared_session.mount("https://", _twstock_proxy._LegacyCertAdapter(pool_connections=20, pool_maxsize=20))
+_shared_session.mount("http://", _twstock_proxy._LegacyCertAdapter(pool_connections=20, pool_maxsize=20))
+_twstock_proxy.get_session = lambda: _shared_session
 
 
 # ─── Helpers ──────────────────────────────────────────────
@@ -217,6 +230,8 @@ def sync_historical_prices(
     )
 
     try:
+        t0 = time.perf_counter()
+
         # Reusable fetcher — stateless, thread-safe
         code_info = twstock.codes.get(symbol)
         data_source = getattr(code_info, "data_source", "twse") if code_info else "twse"
@@ -239,6 +254,8 @@ def sync_historical_prices(
                     rows = future.result()
                     if rows:
                         all_rows.extend(rows)
+
+        t1 = time.perf_counter()
 
         seen_dates = set()
         upserted = 0
@@ -288,6 +305,17 @@ def sync_historical_prices(
             )
             result = db.execute(stmt)
             upserted = result.rowcount or 0
+
+        t2 = time.perf_counter()
+        logger.info(
+            "[%s] synced %d months → %d rows (fetch %.2fs | db %.2fs | total %.2fs)",
+            symbol,
+            months_requested,
+            upserted,
+            t1 - t0,
+            t2 - t1,
+            t2 - t0,
+        )
 
         status.status = "success"
         status.synced_from = start if status.synced_from is None else min(status.synced_from, start)

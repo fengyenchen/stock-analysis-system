@@ -1,7 +1,10 @@
+import csv
+import io
 from datetime import date, datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -94,14 +97,15 @@ async def get_stock_quote(
     return StockQuoteRead(**quote)
 
 
-@router.get("/{symbol}/prices", response_model=List[StockPriceRead])
+@router.get("/{symbol}/prices")
 def get_stock_history(
     symbol: str,
     start: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
     end: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
+    format: str = Query("json", pattern=r"^(json|csv)$"),
     db: Session = Depends(get_db),
 ):
-    """Get cached historical prices for a stock."""
+    """Get cached historical prices for a stock (JSON or CSV)."""
     stock = db.query(Stock).filter(Stock.symbol == symbol).first()
     if not stock:
         raise HTTPException(
@@ -117,6 +121,28 @@ def get_stock_history(
         query = query.filter(StockPrice.date <= end)
 
     prices = query.order_by(StockPrice.date.desc()).all()
+
+    if format == "csv":
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["date", "open", "high", "low", "close", "volume", "change"])
+        for p in prices:
+            writer.writerow([
+                p.date.isoformat(),
+                p.open_price,
+                p.high_price,
+                p.low_price,
+                p.close_price,
+                p.volume,
+                p.change,
+            ])
+        output.seek(0)
+        return StreamingResponse(
+            output,
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{symbol}_prices.csv"'},
+        )
+
     return prices
 
 

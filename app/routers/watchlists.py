@@ -1,7 +1,7 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.dependencies import get_current_active_user
@@ -38,7 +38,12 @@ def list_watchlists(
     current_user: User = Depends(get_current_active_user),
 ):
     """Get all watchlists for the current user."""
-    watchlists = db.query(Watchlist).filter(Watchlist.user_id == current_user.id).all()
+    watchlists = (
+        db.query(Watchlist)
+        .filter(Watchlist.user_id == current_user.id)
+        .options(selectinload(Watchlist.items).selectinload(WatchlistItem.stock))
+        .all()
+    )
     result = []
     for wl in watchlists:
         items = [item.stock for item in wl.items]
@@ -86,7 +91,17 @@ def get_watchlist(
     current_user: User = Depends(get_current_active_user),
 ):
     """Get a specific watchlist with its stocks."""
-    watchlist = _get_watchlist_or_404(db, watchlist_id, current_user.id)
+    watchlist = (
+        db.query(Watchlist)
+        .filter(Watchlist.id == watchlist_id, Watchlist.user_id == current_user.id)
+        .options(selectinload(Watchlist.items).selectinload(WatchlistItem.stock))
+        .first()
+    )
+    if not watchlist:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Watchlist not found",
+        )
     items = [item.stock for item in watchlist.items]
     return WatchlistRead(
         id=watchlist.id,
@@ -106,7 +121,17 @@ def update_watchlist(
     current_user: User = Depends(get_current_active_user),
 ):
     """Update a watchlist resource."""
-    watchlist = _get_watchlist_or_404(db, watchlist_id, current_user.id)
+    watchlist = (
+        db.query(Watchlist)
+        .filter(Watchlist.id == watchlist_id, Watchlist.user_id == current_user.id)
+        .options(selectinload(Watchlist.items).selectinload(WatchlistItem.stock))
+        .first()
+    )
+    if not watchlist:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Watchlist not found",
+        )
     if watchlist_in.name is not None:
         watchlist.name = watchlist_in.name
 
@@ -218,7 +243,17 @@ async def get_watchlist_quotes(
     current_user: User = Depends(get_current_active_user),
 ):
     """Get real-time quotes for all stocks in a watchlist."""
-    watchlist = _get_watchlist_or_404(db, watchlist_id, current_user.id)
+    watchlist = (
+        db.query(Watchlist)
+        .filter(Watchlist.id == watchlist_id, Watchlist.user_id == current_user.id)
+        .options(selectinload(Watchlist.items).selectinload(WatchlistItem.stock))
+        .first()
+    )
+    if not watchlist:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Watchlist not found",
+        )
 
     quotes = []
     for item in watchlist.items:
