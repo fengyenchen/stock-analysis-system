@@ -1,4 +1,138 @@
+# victor-backend Branch Changelog
+
+This document summarizes the major features and changes delivered in the `victor-backend` branch.
+
+---
+
+## 1. Portfolio Management
+
+**Files:** `app/routers/portfolio.py`, `frontend/src/pages/PortfolioPage.tsx`
+
+- **Backend:** New `PortfolioTransaction` and position tracking endpoints.
+  - `POST /api/v1/portfolio/transactions` — record buy/sell transactions.
+  - `GET /api/v1/portfolio/positions` — list all holdings with calculated P&L using live quotes.
+  - `GET /api/v1/portfolio/positions/{symbol}` — single-stock position detail.
+- **Frontend:** Dedicated portfolio page to view holdings, transaction history, and performance.
+
+---
+
+## 2. Price Alerts
+
+**Files:** `app/routers/alerts.py`, `frontend/src/pages/AlertsPage.tsx`
+
+- `GET /api/v1/price-alerts` — list user alerts with optional `active_only` filter.
+- `POST /api/v1/price-alerts` — create alerts with conditions (`above` / `below`).
+- `PATCH /api/v1/price-alerts/{id}` — edit or deactivate alerts.
+- `DELETE /api/v1/price-alerts/{id}` — remove alerts.
+- Frontend alerts page for managing notification preferences.
+
+---
+
+## 3. Target Prices & Analyst Ratings
+
+**Files:** `app/routers/target_prices.py`, `app/models.py`
+
+- New `StockTargetPrice` model stores analyst ratings (`buy` / `hold` / `sell`), target prices, and report dates.
+- `GET /api/v1/stocks/{symbol}/target-prices` — publicly readable.
+- `POST /api/v1/stocks/{symbol}/target-prices` — **admin-only** creation.
+
+---
+
+## 4. User Profile & Security
+
+**Files:** `app/routers/auth.py`, `frontend/src/pages/ProfilePage.tsx`
+
+- `PATCH /api/v1/users/me` — update username and email with uniqueness checks.
+- `POST /api/v1/users/me/change-password` — requires current password verification.
+- Auth endpoints now include **rate limiting** via `slowapi`:
+  - Register: 5/minute
+  - Login: 10/minute
+  - Token refresh: 10/minute
+  - Password reset: 3–5/minute
+
+---
+
+## 5. Admin User Management
+
+**Files:** `app/routers/admin.py`, `frontend/src/pages/AdminDashboardPage.tsx`
+
+- `GET /api/v1/admin/users` — paginated user list.
+- `GET /api/v1/admin/users/{id}` — single user detail.
+- `PATCH /api/v1/admin/users/{id}` — update role (`user`/`admin`) and active status.
+- Self-protection: admins cannot demote or deactivate themselves via these endpoints.
+- CLI helper: `python -m app.cli make-admin --username alice`.
+
+---
+
+## 6. Content Visibility
+
+**Files:** `app/routers/content_visibility.py`, `frontend/src/hooks/useContentVisibility.ts`
+
+- Global and per-user overrides for UI component visibility.
+- Supported keys: `recommendation_banner`, `metrics_strip`, `price_chart`, `technical_indicators`, `analysis_points`, `quick_stats_grid`, `key_metrics_grid`, `analyst_consensus`, `related_stocks`, `financial_health_scores`, `quick_actions`, `signal_summary`, `risk_assessment`, `support_resistance`, `peer_comparison`, `sync_csv_actions`, `alert_form`.
+- `GET /api/v1/content-visibility` — returns effective settings for the authenticated user.
+
+---
+
+## 7. Real-Time Quote Streaming (SSE)
+
+**Files:** `app/routers/events.py`, `frontend/src/hooks/useSSEQuotes.ts`
+
+- `GET /api/v1/events/quotes?symbols=2330,2317&interval=30` — Server-Sent Events stream.
+- Async generator fetches live quotes on an interval and streams JSON payloads.
+- Frontend hook consumes the stream for live dashboard/watchlist updates.
+
+---
+
+## 8. Stock Data Enhancements
+
+**Files:** `app/routers/stocks.py`, `app/services/summaries.py`, `app/services/fundamentals.py`
+
+- **Batch Summary:** `GET /api/v1/stocks/batch/summary?symbols=2330,2317` — enriched multi-stock response (price, change %, recommendation, sparkline data) up to 50 symbols.
+- **Peer Comparison:** `GET /api/v1/stocks/{symbol}/peers` — returns stocks in the same industry.
+- **CSV Export:** `GET /api/v1/stocks/{symbol}/prices?format=csv` — download historical prices as CSV.
+- **Fundamentals:** `StockFundamental` model added (market cap, P/E, EPS, dividend yield, ROE, beta, etc.).
+- **ETF Support:** `is_etf` flag added to `Stock` model.
+
+---
+
+## 9. PWA Support
+
+**Files:** `frontend/vite.config.ts`, `frontend/public/`, `frontend/index.html`
+
+- `vite-plugin-pwa` configured with auto-update service worker.
+- Manifest: `TW Stock Tracker` — installable on mobile and desktop.
+- Icons: 192×192 and 512×512 PNGs plus Apple touch icon.
+- Standalone display mode with portrait orientation.
+
+---
+
+## 10. Frontend Overhaul
+
+**Files:** `frontend/src/components/`, `frontend/src/pages/`, `frontend/src/hooks/`
+
+- **Responsive Design:** Mobile-first layout with `BottomTabBar` and `DesktopNavbar`.
+- **New Stock Detail Components:** `PriceChart`, `TechnicalIndicators`, `AnalysisPoints`, `KeyMetricsGrid`, `AnalystConsensus`, `FinancialHealthScores`, `RiskAssessment`, `SupportResistance`, `PeerComparison`, `SignalSummary`, `RSIGauge`, `VolumeAnalysisCard`, `RecBanner`, `QuickActions`, `MiniSparkline`, etc.
+- **Animations:** Framer Motion page transitions and scroll-reveal effects.
+- **Theming:** `ThemeProvider` with dark/light mode support.
+- **Utilities:** `useHaptic`, `useOnlineStatus`, `useScrollReveal`, `useStockSearch`, `useMediaQuery`.
+- **Query Persistence:** TanStack Query with `idb-keyval` persistent cache.
+
+---
+
+## 11. Infrastructure & Reliability
+
+**Files:** `app/main.py`, `app/limiter.py`, `app/config.py`
+
+- **Request ID Middleware:** Every request gets a `X-Request-ID` header.
+- **Rate Limiting:** `slowapi` integrated globally; auth endpoints have per-route limits.
+- **Scheduler Lifespan:** Moved from `@app.on_event("startup")` to FastAPI `lifespan` context manager for graceful startup/shutdown.
+- **Config:** `app_name` changed to `Taiwan Stock Analysis API`; sync fallback tuned (`0.3s` delay, `8` workers).
+
+---
+
 # Stock Sync Performance Optimization Report
+
 
 ## Summary
 
