@@ -6,19 +6,25 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "@/hooks/useTheme";
 import { Button } from "@/components/ui/Button";
 import { toast } from "sonner";
+import { useState, useRef, useEffect } from "react";
 import {
   Search,
   List,
   LogOut,
   LogIn,
   TrendingUp,
-  User,
   AlertCircle,
   Moon,
   Sun,
   Bell,
   Wallet,
+  ChevronDown,
+  Settings,
 } from "lucide-react";
+
+function getInitials(username: string): string {
+  return username.slice(0, 2).toUpperCase();
+}
 
 export function Navbar() {
   const { user, logout: storeLogout } = useAuthStore();
@@ -26,8 +32,23 @@ export function Navbar() {
   const location = useLocation();
   const queryClient = useQueryClient();
   const { theme, toggleTheme } = useTheme();
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    if (dropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [dropdownOpen]);
 
   const handleLogout = async () => {
+    setDropdownOpen(false);
     try {
       const token = getAccessToken();
       if (token) await apiLogout(token);
@@ -99,14 +120,47 @@ export function Navbar() {
                   >
                     <Bell className="w-4 h-4" />
                   </Link>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <User className="w-4 h-4" />
-                    <span className="hidden sm:inline">{user.username}</span>
+
+                  <div className="relative" ref={dropdownRef}>
+                    <button
+                      onClick={() => setDropdownOpen(!dropdownOpen)}
+                      className="flex items-center gap-2 pl-2 pr-1 py-1.5 rounded-lg text-sm text-muted-foreground hover:bg-muted transition-colors"
+                      aria-haspopup="menu"
+                      aria-expanded={dropdownOpen}
+                    >
+                      <div className="w-7 h-7 rounded-full bg-accent text-accent-foreground flex items-center justify-center text-xs font-semibold">
+                        {getInitials(user.username)}
+                      </div>
+                      <span className="hidden sm:inline font-medium">{user.username}</span>
+                      <ChevronDown
+                        className={`w-3.5 h-3.5 transition-transform ${dropdownOpen ? "rotate-180" : ""}`}
+                      />
+                    </button>
+
+                    {dropdownOpen && (
+                      <div className="absolute right-0 mt-2 w-48 bg-card border border-border rounded-lg shadow-lg py-1 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                        <div className="px-3 py-2 border-b border-border">
+                          <p className="text-sm font-medium text-primary truncate">{user.username}</p>
+                          <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                        </div>
+                        <Link
+                          to="/profile"
+                          onClick={() => setDropdownOpen(false)}
+                          className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-primary transition-colors"
+                        >
+                          <Settings className="w-4 h-4" />
+                          Profile
+                        </Link>
+                        <button
+                          onClick={handleLogout}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-danger hover:bg-danger/10 transition-colors"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          Logout
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  <Button variant="ghost" size="sm" onClick={handleLogout} className="text-danger">
-                    <LogOut className="w-4 h-4" />
-                    <span className="hidden sm:inline">Logout</span>
-                  </Button>
                 </>
               ) : (
                 <Link to="/login">

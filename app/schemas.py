@@ -43,6 +43,21 @@ class UserRead(UserBase):
     model_config = {"from_attributes": True}
 
 
+class UserUpdate(BaseModel):
+    username: Optional[str] = Field(None, min_length=3, max_length=50)
+    email: Optional[EmailStr] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def password_complexity(cls, v: str) -> str:
+        return _check_password_complexity(v)
+
+
 # ─── Token ───────────────────────────────────────────────
 
 class TokenPair(BaseModel):

@@ -16,7 +16,8 @@ def test_rest_api_route_inventory():
     routes = _route_map()
     expected = {
         "/api/v1/users": {"POST"},
-        "/api/v1/users/me": {"GET"},
+        "/api/v1/users/me": {"GET", "PATCH"},
+        "/api/v1/users/me/change-password": {"POST"},
         "/api/v1/sessions": {"POST"},
         "/api/v1/sessions/current": {"DELETE"},
         "/api/v1/token-refreshes": {"POST"},

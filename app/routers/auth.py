@@ -12,6 +12,7 @@ from app.dependencies import get_current_active_user
 from app.limiter import conditional_limit
 from app.models import User, TokenBlacklist, PasswordResetToken
 from app.schemas import (
+    ChangePasswordRequest,
     LoginRequest,
     PasswordResetConfirm,
     PasswordResetRequestCreate,
@@ -19,6 +20,7 @@ from app.schemas import (
     TokenPair,
     UserCreate,
     UserRead,
+    UserUpdate,
 )
 from app.security import (
     create_access_token,
@@ -183,6 +185,52 @@ def refresh(request: Request, request_data: RefreshRequest, db: Session = Depend
 @router.get("/users/me", response_model=UserRead)
 def get_me(current_user: User = Depends(get_current_active_user)):
     return current_user
+
+
+@router.patch("/users/me", response_model=UserRead)
+def update_me(
+    user_update: UserUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    if user_update.username is not None and user_update.username != current_user.username:
+        existing = db.query(User).filter(User.username == user_update.username).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Username already taken",
+            )
+        current_user.username = user_update.username
+
+    if user_update.email is not None and user_update.email != current_user.email:
+        existing = db.query(User).filter(User.email == user_update.email).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email already registered",
+            )
+        current_user.email = user_update.email
+
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.post("/users/me/change-password", status_code=status.HTTP_200_OK)
+def change_password(
+    request_data: ChangePasswordRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    if not verify_password(request_data.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+    current_user.hashed_password = get_password_hash(request_data.new_password)
+    db.commit()
+    return {"detail": "Password updated successfully"}
 
 
 @router.post("/password-reset-requests", status_code=status.HTTP_200_OK)

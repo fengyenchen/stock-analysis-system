@@ -251,3 +251,13 @@ export interface PortfolioPosition {
 
 export interface PasswordResetRequest { email: string; }
 export interface PasswordResetConfirmRequest { token: string; new_password: string; }
+
+export interface UserUpdate {
+  username?: string;
+  email?: string;
+}
+
+export interface ChangePasswordRequest {
+  current_password: string;
+  new_password: string;
+}
