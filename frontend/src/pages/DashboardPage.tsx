@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useAuthStore } from "@/stores/authStore";
+import { Link, useNavigate } from "react-router-dom";
+import { BarChart2, ChevronRight, List, Search, TrendingUp } from "lucide-react";
 import { listWatchlists } from "@/api/watchlists";
-import { Search, TrendingUp, List, ChevronRight, BarChart2 } from "lucide-react";
+import { useAuthStore } from "@/stores/authStore";
 
 export function DashboardPage() {
   const { isAuthenticated } = useAuthStore();
@@ -19,7 +19,6 @@ export function DashboardPage() {
     enabled: isAuthenticated,
   });
 
-  // Discard stale primaryWlId if the watchlist no longer exists
   useEffect(() => {
     if (watchlists && primaryWlId) {
       const stillExists = watchlists.some((wl) => wl.id.toString() === primaryWlId);
@@ -30,7 +29,6 @@ export function DashboardPage() {
     }
   }, [watchlists, primaryWlId]);
 
-  // Auto-select first watchlist when none is pinned
   useEffect(() => {
     if (watchlists && watchlists.length > 0 && !primaryWlId) {
       const id = watchlists[0].id.toString();
@@ -45,9 +43,15 @@ export function DashboardPage() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    navigate("/stocks", {
-      state: searchQuery.trim() ? { initialQuery: searchQuery.trim() } : undefined,
-    });
+
+    const trimmed = searchQuery.trim();
+    if (!trimmed) {
+      navigate("/stocks");
+      return;
+    }
+
+    const params = new URLSearchParams({ q: trimmed });
+    navigate(`/stocks?${params.toString()}`);
   };
 
   const handleWatchlistChange = (id: string) => {
@@ -58,7 +62,6 @@ export function DashboardPage() {
   return (
     <div className="space-y-4 md:space-y-6 px-3 md:px-0 py-3 md:py-0">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
-        {/* Left panel */}
         <div className="lg:col-span-2">
           <div className="bg-card border border-border rounded-xl p-4 md:p-6 h-full">
             {showHeroSearch ? (
@@ -129,11 +132,11 @@ export function DashboardPage() {
                     </select>
                   )}
                   {watchlists && watchlists.length === 1 && (
-                    <span className="text-sm text-muted-foreground">{primaryWl!.name}</span>
+                    <span className="text-sm text-muted-foreground">{primaryWl.name}</span>
                   )}
                 </div>
                 <div className="space-y-2">
-                  {primaryWl!.items.map((stock) => (
+                  {primaryWl.items.map((stock) => (
                     <Link
                       key={stock.symbol}
                       to={`/stocks/${stock.symbol}`}
@@ -156,7 +159,7 @@ export function DashboardPage() {
                   ))}
                 </div>
                 <Link
-                  to={`/watchlists/${primaryWl!.id}`}
+                  to={`/watchlists/${primaryWl.id}`}
                   className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-accent transition-colors"
                 >
                   View full watchlist <ChevronRight className="w-3 h-3" />
@@ -166,7 +169,6 @@ export function DashboardPage() {
           </div>
         </div>
 
-        {/* Right panel — Quick Links */}
         <div>
           <div className="bg-card border border-border rounded-xl p-4 md:p-6 h-full space-y-4">
             <div className="flex items-center gap-2">
@@ -205,7 +207,6 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* Market sector section */}
       <div className="bg-card border border-border rounded-xl p-4 md:p-6">
         <div className="flex items-center gap-2 mb-3">
           <BarChart2 className="w-4 h-4 text-accent" />
