@@ -1,15 +1,15 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+
+function getIsStandalone(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    // @ts-expect-error iOS property
+    window.navigator.standalone === true
+  );
+}
 
 export function useIsStandalone() {
-  const [isStandalone, setIsStandalone] = useState(false);
-
-  useEffect(() => {
-    const standalone =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      // @ts-expect-error iOS property
-      window.navigator.standalone === true;
-    setIsStandalone(standalone);
-  }, []);
-
+  const [isStandalone] = useState(getIsStandalone);
   return isStandalone;
 }
