@@ -161,6 +161,44 @@ class RecommendationIndicators(BaseModel):
     ma60: Optional[Decimal] = None
     rsi14: Optional[Decimal] = None
     volume_ratio: Optional[Decimal] = None
+    avg_volume_20d: Optional[Decimal] = None
+    macd_dif: Optional[Decimal] = None
+    macd_signal: Optional[Decimal] = None
+    macd_histogram: Optional[Decimal] = None
+    bollinger_upper: Optional[Decimal] = None
+    bollinger_middle: Optional[Decimal] = None
+    bollinger_lower: Optional[Decimal] = None
+    kd_k: Optional[Decimal] = None
+    kd_d: Optional[Decimal] = None
+    atr14: Optional[Decimal] = None
+    volatility_20d: Optional[Decimal] = None
+
+
+class IndicatorSignal(BaseModel):
+    ma: Literal["buy", "hold", "sell"] = "hold"
+    rsi: Literal["buy", "hold", "sell"] = "hold"
+    macd: Literal["buy", "hold", "sell"] = "hold"
+    volume: Literal["buy", "hold", "sell"] = "hold"
+    bollinger: Literal["buy", "hold", "sell"] = "hold"
+    kd: Literal["buy", "hold", "sell"] = "hold"
+
+
+class RiskMetrics(BaseModel):
+    risk_level: Literal["low", "medium", "high"] = "medium"
+    volatility_risk: int = 50
+    liquidity_risk: int = 50
+    fx_risk: int = 10
+    systemic_risk: int = 50
+
+
+class SupportResistanceLevels(BaseModel):
+    r2: Optional[Decimal] = None
+    r1: Optional[Decimal] = None
+    s1: Optional[Decimal] = None
+    s2: Optional[Decimal] = None
+    stop_loss: Optional[Decimal] = None
+    target_price: Optional[Decimal] = None
+    potential_return: Optional[Decimal] = None
 
 
 class StockRecommendationRead(BaseModel):
@@ -171,6 +209,10 @@ class StockRecommendationRead(BaseModel):
     indicators: RecommendationIndicators
     reasons: List[str]
     disclaimer: str
+    indicator_signals: IndicatorSignal = IndicatorSignal()
+    composite_score: int = Field(3, ge=1, le=5)
+    risk_metrics: RiskMetrics = RiskMetrics()
+    support_resistance: SupportResistanceLevels = SupportResistanceLevels()
 
 
 class StockQuoteRead(BaseModel):
@@ -267,6 +309,67 @@ class WatchlistRead(WatchlistBase):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class StockFundamentalRead(BaseModel):
+    market_cap: Optional[Decimal] = None
+    pe_ratio: Optional[Decimal] = None
+    dividend_yield: Optional[Decimal] = None
+    eps: Optional[Decimal] = None
+    book_value: Optional[Decimal] = None
+    shares_outstanding: Optional[Decimal] = None
+    fifty_two_week_high: Optional[Decimal] = None
+    fifty_two_week_low: Optional[Decimal] = None
+    sector: Optional[str] = None
+    website: Optional[str] = None
+    long_business_summary: Optional[str] = None
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class StockProfileRead(BaseModel):
+    symbol: str
+    name: str
+    market: str
+    industry: Optional[str] = None
+    sector: Optional[str] = None
+    website: Optional[str] = None
+    long_business_summary: Optional[str] = None
+    pe_ratio: Optional[Decimal] = None
+    dividend_yield: Optional[Decimal] = None
+    market_cap: Optional[Decimal] = None
+
+
+class PortfolioTransactionCreate(BaseModel):
+    symbol: str
+    transaction_type: Literal["buy", "sell"]
+    shares: Decimal = Field(..., gt=0)
+    price: Decimal = Field(..., gt=0)
+    transaction_date: Optional[datetime] = None
+
+
+class PortfolioTransactionRead(BaseModel):
+    id: int
+    symbol: str
+    transaction_type: str
+    shares: Decimal
+    price: Decimal
+    transaction_date: datetime
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PortfolioPositionRead(BaseModel):
+    symbol: str
+    name: str
+    shares: Decimal
+    avg_price: Decimal
+    current_price: Optional[Decimal] = None
+    market_value: Optional[Decimal] = None
+    unrealized_pnl: Optional[Decimal] = None
+    unrealized_pnl_percent: Optional[Decimal] = None
 
 
 class WatchlistWithQuotesRead(BaseModel):

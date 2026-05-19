@@ -1,13 +1,20 @@
 import { apiClient } from "./client";
 import type {
   Stock,
+  StockFundamental,
   StockPrice,
+  StockProfile,
   StockQuote,
   StockRecommendation,
   StockSyncJob,
   StockSyncStatus,
   StockTargetPrice,
 } from "@/types";
+
+export async function getStock(symbol: string): Promise<Stock> {
+  const res = await apiClient.get<Stock>(`stocks/${symbol}`);
+  return res.data;
+}
 
 export async function searchStocks(q: string): Promise<Stock[]> {
   const res = await apiClient.get<Stock[]>("stocks", {
@@ -74,5 +81,20 @@ export async function syncStockPrices(
 
 export async function getTargetPrices(symbol: string): Promise<StockTargetPrice[]> {
   const res = await apiClient.get<StockTargetPrice[]>(`stocks/${symbol}/target-prices`);
+  return res.data;
+}
+
+export async function getStockPeers(symbol: string): Promise<Stock[]> {
+  const res = await apiClient.get<Stock[]>(`stocks/${symbol}/peers`);
+  return res.data;
+}
+
+export async function getStockFundamentals(symbol: string): Promise<StockFundamental> {
+  const res = await apiClient.get<StockFundamental>(`stocks/${symbol}/fundamentals`);
+  return res.data;
+}
+
+export async function getStockProfile(symbol: string): Promise<StockProfile> {
+  const res = await apiClient.get<StockProfile>(`stocks/${symbol}/profile`);
   return res.data;
 }

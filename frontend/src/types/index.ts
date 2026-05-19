@@ -39,6 +39,34 @@ export interface Stock {
   updated_at: string;
 }
 
+export interface StockFundamental {
+  market_cap: string | null;
+  pe_ratio: string | null;
+  dividend_yield: string | null;
+  eps: string | null;
+  book_value: string | null;
+  shares_outstanding: string | null;
+  fifty_two_week_high: string | null;
+  fifty_two_week_low: string | null;
+  sector: string | null;
+  website: string | null;
+  long_business_summary: string | null;
+  updated_at: string;
+}
+
+export interface StockProfile {
+  symbol: string;
+  name: string;
+  market: string;
+  industry?: string | null;
+  sector?: string | null;
+  website?: string | null;
+  long_business_summary?: string | null;
+  pe_ratio?: string | null;
+  dividend_yield?: string | null;
+  market_cap?: string | null;
+}
+
 export interface StockPrice {
   date: string;
   open_price: string;
@@ -83,6 +111,44 @@ export interface RecommendationIndicators {
   ma60?: string | null;
   rsi14?: string | null;
   volume_ratio?: string | null;
+  avg_volume_20d?: string | null;
+  macd_dif?: string | null;
+  macd_signal?: string | null;
+  macd_histogram?: string | null;
+  bollinger_upper?: string | null;
+  bollinger_middle?: string | null;
+  bollinger_lower?: string | null;
+  kd_k?: string | null;
+  kd_d?: string | null;
+  atr14?: string | null;
+  volatility_20d?: string | null;
+}
+
+export interface IndicatorSignals {
+  ma: "buy" | "hold" | "sell";
+  rsi: "buy" | "hold" | "sell";
+  macd: "buy" | "hold" | "sell";
+  volume: "buy" | "hold" | "sell";
+  bollinger: "buy" | "hold" | "sell";
+  kd: "buy" | "hold" | "sell";
+}
+
+export interface RiskMetrics {
+  risk_level: "low" | "medium" | "high";
+  volatility_risk: number;
+  liquidity_risk: number;
+  fx_risk: number;
+  systemic_risk: number;
+}
+
+export interface SupportResistanceLevels {
+  r2?: string | null;
+  r1?: string | null;
+  s1?: string | null;
+  s2?: string | null;
+  stop_loss?: string | null;
+  target_price?: string | null;
+  potential_return?: string | null;
 }
 
 export interface StockRecommendation {
@@ -93,6 +159,10 @@ export interface StockRecommendation {
   indicators: RecommendationIndicators;
   reasons: string[];
   disclaimer: string;
+  indicator_signals: IndicatorSignals;
+  composite_score: number;
+  risk_metrics: RiskMetrics;
+  support_resistance: SupportResistanceLevels;
 }
 
 export interface StockSyncJob {
@@ -149,6 +219,27 @@ export interface WatchlistWithQuotes {
   id: number;
   name: string;
   quotes: StockQuote[];
+}
+
+export interface PortfolioTransaction {
+  id: number;
+  symbol: string;
+  transaction_type: "buy" | "sell";
+  shares: string;
+  price: string;
+  transaction_date: string;
+  created_at: string;
+}
+
+export interface PortfolioPosition {
+  symbol: string;
+  name: string;
+  shares: string;
+  avg_price: string;
+  current_price?: string | null;
+  market_value?: string | null;
+  unrealized_pnl?: string | null;
+  unrealized_pnl_percent?: string | null;
 }
 
 export interface PasswordResetRequest { email: string; }

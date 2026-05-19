@@ -11,7 +11,9 @@ from app.database import get_db
 from app.dependencies import get_current_active_user
 from app.models import Stock, StockPrice, StockSyncJob, StockSyncStatus, User
 from app.schemas import (
+    StockFundamentalRead,
     StockPriceRead,
+    StockProfileRead,
     StockQuoteRead,
     StockRecommendationRead,
     StockRead,
@@ -19,6 +21,7 @@ from app.schemas import (
     StockSyncJobRead,
     StockSyncStatusRead,
 )
+from app.services.fundamentals import get_stock_fundamentals
 from app.services.recommendations import get_stock_recommendation
 from app.services.stock_data import async_get_realtime_quote, sync_historical_prices
 
@@ -261,3 +264,86 @@ def get_stock_sync_job(
             detail="Stock sync job not found",
         )
     return _read_stock_sync_job(job)
+
+
+@router.get("/{symbol}/peers", response_model=list[StockRead])
+def get_stock_peers(
+    symbol: str,
+    limit: int = Query(5, ge=1, le=20),
+    db: Session = Depends(get_db),
+):
+    """Get peer stocks in the same industry."""
+    stock = db.query(Stock).filter(Stock.symbol == symbol, Stock.is_active == True).first()
+    if not stock:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Stock {symbol} not found",
+        )
+
+    if not stock.industry:
+        return []
+
+    peers = (
+        db.query(Stock)
+        .filter(
+            Stock.industry == stock.industry,
+            Stock.is_active == True,
+            Stock.symbol != symbol,
+        )
+        .order_by(Stock.symbol)
+        .limit(limit)
+        .all()
+    )
+    return peers
+
+
+@router.get("/{symbol}/fundamentals", response_model=StockFundamentalRead)
+def get_stock_fundamentals_endpoint(
+    symbol: str,
+    db: Session = Depends(get_db),
+):
+    """Get stock fundamentals (P/E, dividend yield, market cap, etc.) from yfinance."""
+    stock = db.query(Stock).filter(Stock.symbol == symbol, Stock.is_active == True).first()
+    if not stock:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Stock {symbol} not found",
+        )
+
+    fundamental = get_stock_fundamentals(db, stock)
+    if not fundamental:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to fetch fundamentals data",
+        )
+
+    return fundamental
+
+
+@router.get("/{symbol}/profile", response_model=StockProfileRead)
+def get_stock_profile(
+    symbol: str,
+    db: Session = Depends(get_db),
+):
+    """Get stock profile with fundamentals merged."""
+    stock = db.query(Stock).filter(Stock.symbol == symbol, Stock.is_active == True).first()
+    if not stock:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Stock {symbol} not found",
+        )
+
+    fundamental = get_stock_fundamentals(db, stock)
+
+    return StockProfileRead(
+        symbol=stock.symbol,
+        name=stock.name,
+        market=stock.market,
+        industry=stock.industry,
+        sector=fundamental.sector if fundamental else None,
+        website=fundamental.website if fundamental else None,
+        long_business_summary=fundamental.long_business_summary if fundamental else None,
+        pe_ratio=fundamental.pe_ratio if fundamental else None,
+        dividend_yield=fundamental.dividend_yield if fundamental else None,
+        market_cap=fundamental.market_cap if fundamental else None,
+    )

@@ -16,6 +16,7 @@ const WatchlistDetailPage = lazy(() => import("@/pages/WatchlistDetailPage").the
 const ForgotPasswordPage = lazy(() => import("@/pages/ForgotPasswordPage").then((m) => ({ default: m.ForgotPasswordPage })));
 const ResetPasswordPage = lazy(() => import("@/pages/ResetPasswordPage").then((m) => ({ default: m.ResetPasswordPage })));
 const AlertsPage = lazy(() => import("@/pages/AlertsPage").then((m) => ({ default: m.AlertsPage })));
+const PortfolioPage = lazy(() => import("@/pages/PortfolioPage").then((m) => ({ default: m.PortfolioPage })));
 
 function PageLoader() {
   return (
@@ -101,6 +102,14 @@ function App() {
               element={
                 <ErrorBoundary>
                   <AlertsPage />
+                </ErrorBoundary>
+              }
+            />
+            <Route
+              path="/portfolio"
+              element={
+                <ErrorBoundary>
+                  <PortfolioPage />
                 </ErrorBoundary>
               }
             />

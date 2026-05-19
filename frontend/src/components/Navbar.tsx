@@ -17,6 +17,7 @@ import {
   Moon,
   Sun,
   Bell,
+  Wallet,
 } from "lucide-react";
 
 export function Navbar() {
@@ -73,6 +74,10 @@ export function Navbar() {
               <Link to="/watchlists" className={navLinkClass("/watchlists")}>
                 <List className="w-4 h-4" />
                 <span className="hidden sm:inline">Watchlists</span>
+              </Link>
+              <Link to="/portfolio" className={navLinkClass("/portfolio")}>
+                <Wallet className="w-4 h-4" />
+                <span className="hidden sm:inline">Portfolio</span>
               </Link>
             </div>
 
