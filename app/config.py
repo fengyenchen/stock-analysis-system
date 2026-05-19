@@ -22,8 +22,8 @@ class Settings(BaseSettings):
 
     # Stock data sync
     stock_history_start_date: str = "2010-01-01"
-    stock_sync_rate_limit_seconds: float = 1.0
-    stock_sync_max_concurrent: int = 5
+    stock_sync_rate_limit_seconds: float = 0.3
+    stock_sync_max_concurrent: int = 8
     stock_daily_sync_enabled: bool = True
     stock_daily_sync_hour: int = 16
     stock_daily_sync_minute: int = 30
