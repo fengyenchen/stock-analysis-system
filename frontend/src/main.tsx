@@ -16,6 +16,17 @@ const queryClient = new QueryClient({
   },
 });
 
+// Register PWA service worker (autoUpdate)
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("/sw.js")
+      .catch(() => {
+        // silent fail
+      });
+  });
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider>

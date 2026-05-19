@@ -36,6 +36,8 @@ html, body, #root {
 
 html {
   scroll-behavior: smooth;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 body {
@@ -44,11 +46,31 @@ body {
   color: var(--color-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior-y: none;
 }
 
 #root {
   display: flex;
   flex-direction: column;
+}
+
+/* Prevent text selection on interactive elements for native feel */
+button, a, [role="button"] {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Input zoom prevention on iOS */
+input, select, textarea {
+  font-size: 16px;
+}
+
+/* Safe area support for notched devices */
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* Hide scrollbar for horizontal scroll containers */

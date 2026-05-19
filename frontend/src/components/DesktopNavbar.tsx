@@ -13,7 +13,6 @@ import {
   LogOut,
   LogIn,
   TrendingUp,
-  AlertCircle,
   Moon,
   Sun,
   Bell,
@@ -27,7 +26,7 @@ function getInitials(username: string): string {
   return username.slice(0, 2).toUpperCase();
 }
 
-export function Navbar() {
+export function DesktopNavbar() {
   const { user, logout: storeLogout } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
@@ -72,14 +71,7 @@ export function Navbar() {
     }`;
 
   return (
-    <div>
-      <div className="bg-card border-b border-border py-1.5 px-4 text-center">
-        <p className="text-xs text-muted-foreground flex items-center justify-center gap-1.5">
-          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-accent" />
-          本網站內容僅供參考，不構成任何投資建議。投資人應審慎評估並自負風險。
-        </p>
-      </div>
-
+    <div className="hidden md:block">
       <nav className="bg-card/80 backdrop-blur-xl border-b border-border sticky top-0 z-50">
         <div className="container mx-auto px-4 max-w-6xl">
           <div className="flex items-center justify-between h-14">
@@ -91,20 +83,20 @@ export function Navbar() {
             <div className="flex items-center gap-1">
               <Link to="/stocks" className={navLinkClass("/stocks")}>
                 <Search className="w-4 h-4" />
-                <span className="hidden sm:inline">Stocks</span>
+                <span>Stocks</span>
               </Link>
               <Link to="/watchlists" className={navLinkClass("/watchlists")}>
                 <List className="w-4 h-4" />
-                <span className="hidden sm:inline">Watchlists</span>
+                <span>Watchlists</span>
               </Link>
               <Link to="/portfolio" className={navLinkClass("/portfolio")}>
                 <Wallet className="w-4 h-4" />
-                <span className="hidden sm:inline">Portfolio</span>
+                <span>Portfolio</span>
               </Link>
               {user?.role === "admin" && (
                 <Link to="/admin" className={navLinkClass("/admin")}>
                   <Shield className="w-4 h-4" />
-                  <span className="hidden sm:inline">Admin</span>
+                  <span>Admin</span>
                 </Link>
               )}
             </div>
@@ -138,7 +130,7 @@ export function Navbar() {
                       <div className="w-7 h-7 rounded-full bg-accent text-accent-foreground flex items-center justify-center text-xs font-semibold">
                         {getInitials(user.username)}
                       </div>
-                      <span className="hidden sm:inline font-medium">{user.username}</span>
+                      <span className="font-medium">{user.username}</span>
                       <ChevronDown
                         className={`w-3.5 h-3.5 transition-transform ${dropdownOpen ? "rotate-180" : ""}`}
                       />
@@ -173,7 +165,7 @@ export function Navbar() {
                 <Link to="/login">
                   <Button variant="ghost" size="sm">
                     <LogIn className="w-4 h-4" />
-                    <span className="hidden sm:inline">Login</span>
+                    <span>Login</span>
                   </Button>
                 </Link>
               )}
