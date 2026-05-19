@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/authStore";
-import { updateProfile, changePassword } from "@/api/auth";
-import { getApiErrorMessage } from "@/api/client";
+import { logout as apiLogout, updateProfile, changePassword } from "@/api/auth";
+import { getApiErrorMessage, getAccessToken, clearTokens } from "@/api/client";
 import { toast } from "sonner";
-import { User, Mail, Lock, Eye, EyeOff, Save, X } from "lucide-react";
+import { User, Mail, Lock, Eye, EyeOff, Save, X, LogOut } from "lucide-react";
 
 function getInitials(username: string): string {
   return username.slice(0, 2).toUpperCase();
@@ -15,7 +17,9 @@ function formatDate(dateStr: string): string {
 }
 
 export function ProfilePage() {
-  const { user, setUser } = useAuthStore();
+  const { user, setUser, logout: storeLogout } = useAuthStore();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   // Edit profile state
   const [isEditing, setIsEditing] = useState(false);
@@ -70,6 +74,21 @@ export function ProfilePage() {
     setEditUsername(user.username);
     setEditEmail(user.email);
     setIsEditing(false);
+  };
+
+  const handleLogout = async () => {
+    try {
+      const token = getAccessToken();
+      if (token) await apiLogout(token);
+    } catch {
+      // ignore
+    } finally {
+      clearTokens();
+      storeLogout();
+      queryClient.removeQueries({ queryKey: ["watchlists"] });
+      toast.success("Logged out successfully");
+      navigate("/");
+    }
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -269,6 +288,17 @@ export function ProfilePage() {
             {savingPassword ? "Updating..." : "Change Password"}
           </button>
         </form>
+      </div>
+
+      {/* Logout */}
+      <div className="pt-2">
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-danger text-danger rounded-xl font-medium hover:bg-danger/5 transition-colors"
+        >
+          <LogOut className="w-4 h-4" />
+          Log Out
+        </button>
       </div>
     </div>
   );
