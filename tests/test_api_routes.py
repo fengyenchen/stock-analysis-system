@@ -24,6 +24,7 @@ def test_rest_api_route_inventory():
         "/api/v1/password-reset-requests": {"POST"},
         "/api/v1/password-resets": {"POST"},
         "/api/v1/stocks": {"GET"},
+        "/api/v1/stocks/batch/summary": {"GET"},
         "/api/v1/stocks/{symbol}": {"GET"},
         "/api/v1/stocks/{symbol}/quotes/latest": {"GET"},
         "/api/v1/stocks/{symbol}/prices": {"GET"},
