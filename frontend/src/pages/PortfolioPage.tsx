@@ -23,7 +23,7 @@ export function PortfolioPage() {
   ) ?? 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-4 md:px-0 py-4 md:py-0">
       <div className="flex items-center gap-2">
         <Wallet className="w-6 h-6 text-accent" />
         <h1 className="text-2xl font-bold">投資組合</h1>
@@ -54,8 +54,8 @@ export function PortfolioPage() {
         </Card>
       </div>
 
-      {/* Positions Table */}
-      <Card>
+      {/* Positions — Desktop Table */}
+      <Card className="hidden md:block">
         <CardHeader>
           <CardTitle>持倉明細</CardTitle>
         </CardHeader>
@@ -121,6 +121,65 @@ export function PortfolioPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Positions — Mobile Card List */}
+      <div className="md:hidden space-y-3">
+        {isLoading && (
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-32 w-full rounded-xl" />
+            ))}
+          </div>
+        )}
+
+        {!isLoading && (!data || data.length === 0) && (
+          <div className="text-center py-8 text-muted-foreground bg-card border border-border rounded-xl">
+            <p>尚無持倉</p>
+            <p className="text-sm mt-1">前往股票詳情頁面進行買入操作</p>
+          </div>
+        )}
+
+        {!isLoading && data && data.map((pos) => {
+          const pnl = parseFloat(pos.unrealized_pnl || "0");
+          const isProfit = pnl >= 0;
+          return (
+            <Link
+              key={pos.symbol}
+              to={`/stocks/${pos.symbol}`}
+              className="block bg-card border border-border rounded-xl p-4 hover:shadow-md transition-shadow"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <span className="font-semibold text-primary">{pos.symbol}</span>
+                  <span className="text-xs text-muted-foreground ml-2">{pos.name}</span>
+                </div>
+                <span className={`flex items-center gap-1 text-sm font-semibold ${isProfit ? "text-danger" : "text-success"}`}>
+                  {isProfit ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                  {isProfit ? "+" : ""}{pnl.toLocaleString()}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-y-2 text-sm">
+                <div>
+                  <p className="text-xs text-muted-foreground">股數</p>
+                  <p className="font-medium">{parseFloat(pos.shares).toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">均價</p>
+                  <p className="font-medium">{pos.avg_price}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">現價</p>
+                  <p className="font-medium">{pos.current_price ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">市值</p>
+                  <p className="font-medium">{pos.market_value ?? "—"}</p>
+                </div>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
     </div>
   );
 }

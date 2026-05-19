@@ -43,15 +43,15 @@ export function StockHeader({
       </div>
 
       <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
-        <div className="flex items-start gap-4">
+        <div className="flex items-start gap-3 md:gap-4">
           {/* Gradient icon */}
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-success to-emerald-700 flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-success/20 shrink-0">
+          <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-gradient-to-br from-success to-emerald-700 flex items-center justify-center text-white font-bold text-base md:text-lg shadow-lg shadow-success/20 shrink-0">
             {suffix}
           </div>
 
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <h1 className="text-2xl font-bold tracking-tight">
+              <h1 className="text-xl md:text-2xl font-bold tracking-tight truncate">
                 {symbol} {stock?.name || quote?.name || ""}
               </h1>
               {isETF && (
@@ -90,15 +90,15 @@ export function StockHeader({
           </div>
         </div>
 
-        <div className="flex items-end gap-6">
-          <div className="text-right">
-            <div className="flex items-baseline gap-2 justify-end">
-              <span className="text-4xl font-bold tracking-tight">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-3 sm:gap-6">
+          <div className="text-left sm:text-right">
+            <div className="flex items-baseline gap-2 sm:justify-end">
+              <span className="text-3xl md:text-4xl font-bold tracking-tight">
                 {quote?.price ?? "—"}
               </span>
               <span className="text-muted-foreground text-lg">TWD</span>
             </div>
-            <div className="flex items-center gap-2 justify-end mt-1">
+            <div className="flex items-center gap-2 sm:justify-end mt-1 flex-wrap">
               <span
                 className={`inline-flex items-center gap-0.5 px-2 py-0.5 text-sm font-semibold rounded-md ${
                   isUp

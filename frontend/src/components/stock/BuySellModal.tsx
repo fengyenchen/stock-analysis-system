@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/Input";
 import { createTransaction } from "@/api/portfolio";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 
 interface BuySellModalProps {
   symbol: string;
@@ -17,6 +18,7 @@ export function BuySellModal({ symbol, type, currentPrice, onClose }: BuySellMod
   const [shares, setShares] = useState("");
   const [price, setPrice] = useState(currentPrice || "");
   const queryClient = useQueryClient();
+  const isMobile = useMediaQuery("(max-width: 767px)");
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -39,8 +41,18 @@ export function BuySellModal({ symbol, type, currentPrice, onClose }: BuySellMod
   const total = shares && price ? (parseFloat(shares) * parseFloat(price)).toFixed(2) : "—";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-card rounded-2xl border border-border shadow-xl w-full max-w-md animate-fade-in-up">
+    <div
+      className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50"
+      onClick={onClose}
+    >
+      <div
+        className={`bg-card border border-border shadow-xl w-full animate-fade-in-up ${
+          isMobile
+            ? "rounded-t-2xl max-w-full"
+            : "rounded-2xl max-w-md"
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <h3 className="text-lg font-bold">
             {type === "buy" ? "買入" : "賣出"} {symbol}

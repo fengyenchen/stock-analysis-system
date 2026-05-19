@@ -71,7 +71,7 @@ export function StockSearchPage() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-4 md:px-0 py-4 md:py-0">
       <h1 className="text-2xl font-bold text-primary">Stocks</h1>
 
       {/* Search */}
@@ -80,7 +80,7 @@ export function StockSearchPage() {
         <input
           ref={searchInputRef}
           type="text"
-          placeholder="Search by symbol or name... (Press / to focus)"
+          placeholder="Search by symbol or name..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-accent"
@@ -97,14 +97,14 @@ export function StockSearchPage() {
       </div>
 
       {/* Sticky filters bar */}
-      <div className="sticky top-0 z-10 -mx-4 px-4 py-3 bg-background/80 backdrop-blur border-y border-border space-y-3">
-        <div className="flex items-center gap-2 flex-wrap">
+      <div className="sticky top-0 z-10 -mx-4 md:mx-0 px-4 md:px-0 py-3 bg-background/80 backdrop-blur border-y border-border space-y-3">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
           <SlidersHorizontal className="w-4 h-4 text-muted-foreground flex-shrink-0" />
           {(["all", "stocks", "etfs"] as const).map((type) => (
             <button
               key={type}
               onClick={() => setAssetType(type)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex-shrink-0 ${
                 assetType === type
                   ? "bg-accent text-accent-foreground"
                   : "bg-muted text-muted-foreground hover:bg-accent/10"
@@ -117,7 +117,7 @@ export function StockSearchPage() {
           {hasActiveFilters && (
             <button
               onClick={clearFilters}
-              className="ml-auto inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted transition-colors"
+              className="ml-auto inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted transition-colors flex-shrink-0"
             >
               <X className="w-3.5 h-3.5" />
               Clear
@@ -126,14 +126,14 @@ export function StockSearchPage() {
         </div>
 
         {industries.length > 0 && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex gap-2 overflow-x-auto no-scrollbar">
             {industries.map((ind) => (
               <button
                 key={ind}
                 onClick={() =>
                   setSelectedIndustry(selectedIndustry === ind ? null : ind)
                 }
-                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors flex-shrink-0 ${
                   selectedIndustry === ind
                     ? "bg-accent text-accent-foreground"
                     : "bg-muted text-muted-foreground hover:bg-accent/10"
@@ -211,7 +211,7 @@ export function StockSearchPage() {
                   />
                 </div>
               );
-            })},
+            })}
           </div>
 
           <div ref={sentinelRef} className="h-4" />

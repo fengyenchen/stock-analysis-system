@@ -93,6 +93,18 @@ export function PriceChart({ data, isLoading, isDark }: PriceChartProps) {
   const ma20Data = useMemo(() => computeMA(sortedData, 20), [sortedData]);
   const ma60Data = useMemo(() => computeMA(sortedData, 60), [sortedData]);
 
+  // Responsive chart height
+  const [chartHeight, setChartHeight] = useState(320);
+  useEffect(() => {
+    const updateHeight = () => {
+      const width = window.innerWidth;
+      setChartHeight(width < 768 ? 280 : 520);
+    };
+    updateHeight();
+    window.addEventListener("resize", updateHeight);
+    return () => window.removeEventListener("resize", updateHeight);
+  }, []);
+
   useEffect(() => {
     if (!containerRef.current || sortedData.length === 0) return;
 
@@ -193,7 +205,7 @@ export function PriceChart({ data, isLoading, isDark }: PriceChartProps) {
 
   return (
     <div className="bg-card rounded-2xl border border-border shadow-sm animate-fade-in-up delay-200">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-6 py-4 border-b border-border gap-3">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-4 md:px-6 py-4 border-b border-border gap-3">
         <h3 className="font-bold text-lg">價格走勢</h3>
         <div className="flex items-center gap-3 flex-wrap">
           {/* Chart type toggle */}
@@ -248,7 +260,7 @@ export function PriceChart({ data, isLoading, isDark }: PriceChartProps) {
           </label>
         </div>
       </div>
-      <div className="px-6 py-4">
+      <div className="px-4 md:px-6 py-4">
         {isLoading ? (
           <div className="flex justify-center py-12">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent" />
@@ -258,7 +270,7 @@ export function PriceChart({ data, isLoading, isDark }: PriceChartProps) {
             <p>No historical data available.</p>
           </div>
         ) : (
-          <div ref={containerRef} className="w-full" style={{ height: 520 }} />
+          <div ref={containerRef} className="w-full" style={{ height: chartHeight }} />
         )}
       </div>
     </div>

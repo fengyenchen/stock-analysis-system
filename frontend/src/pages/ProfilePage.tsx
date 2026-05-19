@@ -97,34 +97,34 @@ export function ProfilePage() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-2xl">
-      <h1 className="text-2xl font-bold text-primary mb-6">Profile</h1>
+    <div className="px-4 md:px-0 py-4 md:py-0 max-w-2xl mx-auto space-y-6">
+      <h1 className="text-2xl font-bold text-primary">Profile</h1>
 
       {/* Profile Info Card */}
-      <div className="bg-card border border-border rounded-xl shadow-sm p-6 mb-6">
+      <div className="bg-card border border-border rounded-xl shadow-sm p-6">
         <div className="flex items-center gap-4 mb-4">
-          <div className="w-16 h-16 rounded-full bg-accent text-accent-foreground flex items-center justify-center text-xl font-bold">
+          <div className="w-16 h-16 rounded-full bg-accent text-accent-foreground flex items-center justify-center text-xl font-bold shrink-0">
             {getInitials(user.username)}
           </div>
-          <div>
-            <h2 className="text-lg font-semibold text-primary">{user.username}</h2>
-            <p className="text-sm text-muted-foreground">{user.email}</p>
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold text-primary truncate">{user.username}</h2>
+            <p className="text-sm text-muted-foreground truncate">{user.email}</p>
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
           <div className="flex items-center gap-2 text-muted-foreground">
-            <User className="w-4 h-4" />
+            <User className="w-4 h-4 shrink-0" />
             <span>Member since {formatDate(user.created_at)}</span>
           </div>
           <div className="flex items-center gap-2 text-muted-foreground">
-            <Mail className="w-4 h-4" />
-            <span>{user.email}</span>
+            <Mail className="w-4 h-4 shrink-0" />
+            <span className="truncate">{user.email}</span>
           </div>
         </div>
       </div>
 
       {/* Edit Profile Form */}
-      <div className="bg-card border border-border rounded-xl shadow-sm p-6 mb-6">
+      <div className="bg-card border border-border rounded-xl shadow-sm p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-primary">Edit Profile</h3>
           {!isEditing && (
