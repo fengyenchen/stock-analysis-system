@@ -410,6 +410,7 @@ def sync_historical_prices(
         status.status = "success"
         status.synced_from = start if status.synced_from is None else min(status.synced_from, start)
         status.synced_to = end if status.synced_to is None else max(status.synced_to, end)
+        status.data_source = fetcher_used
         status.last_success_at = datetime.now(timezone.utc)
         status.last_error = None
         status.records_upserted = upserted
@@ -422,6 +423,7 @@ def sync_historical_prices(
             status.status = "failed"
             status.last_attempt_at = datetime.now(timezone.utc)
             status.last_error = str(exc)[:500]
+            status.data_source = None
             db.commit()
         raise
 
@@ -477,7 +479,7 @@ def get_realtime_quote(symbol: str) -> Optional[dict]:
     try:
         rt = twstock.realtime.get(symbol)
     except Exception:
-        logger.warning("Real-time quote fetch failed for %s", symbol, exc_info=False)
+        logger.debug("Real-time quote fetch failed for %s", symbol)
         return None
     if not rt.get("success"):
         return None

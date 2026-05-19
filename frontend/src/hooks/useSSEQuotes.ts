@@ -10,14 +10,24 @@ export function useSSEQuotes(symbols: string[]) {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const symbolsRef = useRef(symbols);
+  symbolsRef.current = symbols;
 
   const connect = useCallback(() => {
-    if (symbols.length === 0) return;
+    if (symbolsRef.current.length === 0) return;
+
+    // Close any existing connection first
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
     }
 
-    const symbolParam = symbols.join(",");
+    const symbolParam = symbolsRef.current.join(",");
     const apiPrefix = import.meta.env.VITE_API_PREFIX || "/api/v1";
     const url = `${apiPrefix}/events/quotes?symbols=${encodeURIComponent(symbolParam)}`;
 
@@ -50,14 +60,18 @@ export function useSSEQuotes(symbols: string[]) {
       setConnected(false);
       setError("Connection lost");
       es.close();
+      eventSourceRef.current = null;
       // Auto-reconnect after 5s
-      setTimeout(() => {
+      reconnectTimerRef.current = setTimeout(() => {
         if (document.visibilityState !== "hidden") {
           connect();
         }
       }, 5000);
     };
-  }, [symbols]);
+  }, []);
+
+  // Use a string key so array-reference changes don't trigger reconnects
+  const symbolsKey = symbols.join(",");
 
   useEffect(() => {
     connect();
@@ -72,12 +86,16 @@ export function useSSEQuotes(symbols: string[]) {
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibility);
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
       }
     };
-  }, [connect]);
+  }, [symbolsKey, connect]);
 
   return { quotes, connected, error };
 }

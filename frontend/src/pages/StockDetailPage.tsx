@@ -807,7 +807,12 @@ export function StockDetailPage() {
           {chartData.length > 0 && (
             <div className="flex items-center justify-between mt-2">
               <p className="text-[10px] text-muted-foreground">
-                Data source: Yahoo Finance (primary) / Taiwan Stock Exchange (fallback)
+                Data source:{" "}
+                {syncStatus?.data_source
+                  ? syncStatus.data_source === "yfinance"
+                    ? "Yahoo Finance"
+                    : "Taiwan Stock Exchange"
+                  : "—"}
               </p>
               {lastSyncDuration !== null && (
                 <p className="text-xs text-muted-foreground">

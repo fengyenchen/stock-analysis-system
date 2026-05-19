@@ -104,6 +104,7 @@ class StockSyncStatus(Base):
     status = Column(String(20), default="pending", nullable=False)
     synced_from = Column(Date, nullable=True)
     synced_to = Column(Date, nullable=True)
+    data_source = Column(String(20), nullable=True)
     last_attempt_at = Column(DateTime(timezone=True), nullable=True)
     last_success_at = Column(DateTime(timezone=True), nullable=True)
     last_error = Column(String(500), nullable=True)

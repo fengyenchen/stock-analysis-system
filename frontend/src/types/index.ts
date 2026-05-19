@@ -69,6 +69,7 @@ export interface StockSyncStatus {
   status: string;
   synced_from?: string | null;
   synced_to?: string | null;
+  data_source?: string | null;
   last_attempt_at?: string | null;
   last_success_at?: string | null;
   last_error?: string | null;

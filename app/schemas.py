@@ -125,6 +125,7 @@ class StockSyncStatusRead(BaseModel):
     status: str
     synced_from: Optional[date] = None
     synced_to: Optional[date] = None
+    data_source: Optional[str] = None
     last_attempt_at: Optional[datetime] = None
     last_success_at: Optional[datetime] = None
     last_error: Optional[str] = None

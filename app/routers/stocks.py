@@ -183,6 +183,7 @@ def get_stock_sync_status(
         status=sync_status.status,
         synced_from=sync_status.synced_from,
         synced_to=sync_status.synced_to,
+        data_source=sync_status.data_source,
         last_attempt_at=sync_status.last_attempt_at,
         last_success_at=sync_status.last_success_at,
         last_error=sync_status.last_error,
