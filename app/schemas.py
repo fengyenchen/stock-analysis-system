@@ -111,6 +111,7 @@ class StockBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     market: str = Field(..., pattern=r"^(TWSE|TPEx)$")
     industry: Optional[str] = Field(None, max_length=50)
+    is_etf: Optional[bool] = None
 
 
 class StockCreate(StockBase):
@@ -367,6 +368,21 @@ class StockProfileRead(BaseModel):
     pe_ratio: Optional[Decimal] = None
     dividend_yield: Optional[Decimal] = None
     market_cap: Optional[Decimal] = None
+
+
+class StockSummaryRead(BaseModel):
+    symbol: str
+    name: str
+    market: str
+    industry: Optional[str] = None
+    is_etf: Optional[bool] = None
+    price: Optional[Decimal] = None
+    change: Optional[Decimal] = None
+    change_percent: Optional[Decimal] = None
+    recommendation: Optional[Literal["buy", "hold", "sell"]] = None
+    confidence: Optional[int] = None
+    composite_score: Optional[int] = None
+    sparkline_data: List[Decimal] = []
 
 
 class PortfolioTransactionCreate(BaseModel):

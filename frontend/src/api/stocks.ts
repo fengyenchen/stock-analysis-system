@@ -6,6 +6,7 @@ import type {
   StockProfile,
   StockQuote,
   StockRecommendation,
+  StockSummary,
   StockSyncJob,
   StockSyncStatus,
   StockTargetPrice,
@@ -96,5 +97,13 @@ export async function getStockFundamentals(symbol: string): Promise<StockFundame
 
 export async function getStockProfile(symbol: string): Promise<StockProfile> {
   const res = await apiClient.get<StockProfile>(`stocks/${symbol}/profile`);
+  return res.data;
+}
+
+export async function getStockSummaries(symbols: string[]): Promise<StockSummary[]> {
+  const symbolParam = symbols.join(",");
+  const res = await apiClient.get<StockSummary[]>("stocks/batch/summary", {
+    params: { symbols: symbolParam },
+  });
   return res.data;
 }

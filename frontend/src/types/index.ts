@@ -35,9 +35,25 @@ export interface Stock {
   name: string;
   market: "TWSE" | "TPEx";
   industry?: string | null;
+  is_etf?: boolean | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface StockSummary {
+  symbol: string;
+  name: string;
+  market: string;
+  industry?: string | null;
+  is_etf?: boolean | null;
+  price?: string | null;
+  change?: string | null;
+  change_percent?: string | null;
+  recommendation?: "buy" | "hold" | "sell" | null;
+  confidence?: number | null;
+  composite_score?: number | null;
+  sparkline_data?: number[];
 }
 
 export interface StockFundamental {

@@ -542,3 +542,54 @@ class TestLegacyStockRoutes:
     def test_action_oriented_stock_routes_are_removed(self, auth_client, path):
         response = auth_client.get(path)
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+
+class TestStockBatchSummary:
+    def test_batch_summary_success(self, client, sample_stocks, db_session):
+        stock = db_session.query(Stock).filter(Stock.symbol == "2330").first()
+        # Add price history
+        for i in range(25):
+            price = StockPrice(
+                stock_id=stock.id,
+                date=date(2024, 1, 1) + timedelta(days=i),
+                open_price=Decimal("800.00") + i,
+                high_price=Decimal("810.00") + i,
+                low_price=Decimal("790.00") + i,
+                close_price=Decimal("805.00") + i,
+                volume=10000 + i,
+                change=Decimal("5.00"),
+                change_percent=Decimal("0.50"),
+            )
+            db_session.add(price)
+        db_session.commit()
+
+        response = client.get("/api/v1/stocks/batch/summary?symbols=2330,2317")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) == 2
+
+        item = data[0]
+        assert item["symbol"] == "2330"
+        assert "name" in item
+        assert "price" in item
+        assert "recommendation" in item
+        assert "sparkline_data" in item
+        assert len(item["sparkline_data"]) == 20
+
+    def test_batch_summary_empty_symbols(self, client):
+        response = client.get("/api/v1/stocks/batch/summary?symbols=")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_batch_summary_too_many_symbols(self, client):
+        symbols = ",".join([str(i) for i in range(55)])
+        response = client.get(f"/api/v1/stocks/batch/summary?symbols={symbols}")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_batch_summary_invalid_symbol_ignored(self, client, sample_stocks):
+        response = client.get("/api/v1/stocks/batch/summary?symbols=FAKE999,2330")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["symbol"] == "2330"

@@ -17,6 +17,7 @@ from app.schemas import (
     StockQuoteRead,
     StockRecommendationRead,
     StockRead,
+    StockSummaryRead,
     StockSyncJobCreate,
     StockSyncJobRead,
     StockSyncStatusRead,
@@ -24,6 +25,7 @@ from app.schemas import (
 from app.services.fundamentals import get_stock_fundamentals
 from app.services.recommendations import get_stock_recommendation
 from app.services.stock_data import async_get_realtime_quote, sync_historical_prices
+from app.services.summaries import get_stock_summaries
 
 router = APIRouter(prefix="/stocks", tags=["Stocks"])
 sync_jobs_router = APIRouter(prefix="/stock-sync-jobs", tags=["Stock Sync Jobs"])
@@ -60,6 +62,27 @@ def list_stocks(
         query = query.filter((Stock.symbol.ilike(f"%{q}%")) | (Stock.name.ilike(f"%{q}%")))
     stocks = query.order_by(Stock.symbol).offset(offset).limit(limit).all()
     return stocks
+
+
+@router.get("/batch/summary", response_model=List[StockSummaryRead])
+def get_stock_batch_summary(
+    symbols: str = Query(..., description="Comma-separated stock symbols"),
+    db: Session = Depends(get_db),
+):
+    """Get enriched summaries (price, change, recommendation, sparkline) for multiple stocks."""
+    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    if not symbol_list:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No symbols provided",
+        )
+    if len(symbol_list) > 50:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum 50 symbols allowed per request",
+        )
+    summaries = get_stock_summaries(db, symbol_list)
+    return summaries
 
 
 @router.get("/{symbol}", response_model=StockRead)

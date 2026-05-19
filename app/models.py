@@ -65,6 +65,7 @@ class Stock(Base):
     name = Column(String(100), nullable=False)
     market = Column(String(10), nullable=False)  # TWSE or TPEx
     industry = Column(String(50), nullable=True)
+    is_etf = Column(Boolean, default=False, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

@@ -1,94 +1,104 @@
-import { useState, useEffect, useRef, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Link, useLocation } from "react-router-dom";
-import { searchStocks, listStocks } from "@/api/stocks";
-import { Search, ArrowRight, SlidersHorizontal } from "lucide-react";
-
-// Approximate heuristic: symbols starting with "00" or 5+ chars are typically ETFs on TWSE/TPEx
-const isEtf = (symbol: string) => symbol.startsWith("00") || symbol.length >= 5;
+import { useEffect, useRef, useCallback } from "react";
+import { Search, SlidersHorizontal, X, Radio } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useStockSearch } from "@/hooks/useStockSearch";
+import { StockListCard } from "@/components/stock/StockListCard";
+import { StockCardSkeleton } from "@/components/stock/StockCardSkeleton";
+import { EmptyStockState } from "@/components/stock/EmptyStockState";
+import { getStock, getStockQuote, getStockRecommendation } from "@/api/stocks";
 
 export function StockSearchPage() {
-  const location = useLocation();
-  const [query, setQuery] = useState<string>(
-    (location.state as { initialQuery?: string } | null)?.initialQuery ?? ""
-  );
-  const [assetType, setAssetType] = useState<"all" | "stocks" | "etfs">("all");
-  const [selectedIndustry, setSelectedIndustry] = useState<string | null>(null);
-  const [visibleCount, setVisibleCount] = useState(40);
-  const sentinelRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const searchQuery = useQuery({
-    queryKey: ["stock-search", query],
-    queryFn: () => searchStocks(query),
-    enabled: query.length > 0,
-  });
+  const {
+    query,
+    setQuery,
+    assetType,
+    setAssetType,
+    selectedIndustry,
+    setSelectedIndustry,
+    visibleResults,
+    filteredResults,
+    isLoading,
+    industries,
+    sentinelRef,
+    hasActiveFilters,
+    clearFilters,
+    summariesMap,
+    liveQuotes,
+    sseConnected,
+  } = useStockSearch();
 
-  const allQuery = useQuery({
-    queryKey: ["stocks-all"],
-    queryFn: () => listStocks(0, 200),
-    enabled: query.length === 0,
-  });
-
-  const rawResults = query.length > 0 ? (searchQuery.data ?? []) : (allQuery.data ?? []);
-  const isLoading = query.length > 0 ? searchQuery.isLoading : allQuery.isLoading;
-
-  const industries = useMemo(() => {
-    const set = new Set<string>();
-    rawResults.forEach((s) => { if (s.industry) set.add(s.industry); });
-    return Array.from(set).sort();
-  }, [rawResults]);
-
-  const filteredResults = rawResults.filter((stock) => {
-    if (assetType === "etfs" && !isEtf(stock.symbol)) return false;
-    if (assetType === "stocks" && isEtf(stock.symbol)) return false;
-    if (selectedIndustry && stock.industry !== selectedIndustry) return false;
-    return true;
-  });
-
-  const visibleResults = filteredResults.slice(0, visibleCount);
-
+  // Keyboard shortcuts: '/' to focus search, 'Escape' to clear
   useEffect(() => {
-    setSelectedIndustry(null);
-    setVisibleCount(40);
-  }, [query]);
-
-  useEffect(() => {
-    setVisibleCount(40);
-  }, [assetType, selectedIndustry]);
-
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel || visibleCount >= filteredResults.length) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          setVisibleCount((n) => n + 40);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "/" && document.activeElement?.tagName !== "INPUT") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+      if (e.key === "Escape") {
+        if (document.activeElement === searchInputRef.current) {
+          searchInputRef.current?.blur();
         }
-      },
-      { threshold: 0.1 }
-    );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [visibleCount, filteredResults.length]);
+        clearFilters();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [clearFilters]);
+
+  // Hover prefetch handler
+  const handleMouseEnter = useCallback(
+    (symbol: string) => {
+      queryClient.prefetchQuery({
+        queryKey: ["stock", symbol],
+        queryFn: () => getStock(symbol),
+        staleTime: 300_000,
+      });
+      queryClient.prefetchQuery({
+        queryKey: ["stock-quote", symbol],
+        queryFn: () => getStockQuote(symbol),
+        staleTime: 60_000,
+      });
+      queryClient.prefetchQuery({
+        queryKey: ["stock-recommendation", symbol],
+        queryFn: () => getStockRecommendation(symbol),
+        staleTime: 300_000,
+      });
+    },
+    [queryClient]
+  );
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-primary">Stocks</h1>
 
+      {/* Search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <input
+          ref={searchInputRef}
           type="text"
-          placeholder="Search by symbol or name..."
+          placeholder="Search by symbol or name... (Press / to focus)"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-accent"
         />
+        {query && (
+          <button
+            onClick={() => setQuery("")}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary"
+            aria-label="Clear search"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
+      {/* Sticky filters bar */}
+      <div className="sticky top-0 z-10 -mx-4 px-4 py-3 bg-background/80 backdrop-blur border-y border-border space-y-3">
+        <div className="flex items-center gap-2 flex-wrap">
           <SlidersHorizontal className="w-4 h-4 text-muted-foreground flex-shrink-0" />
           {(["all", "stocks", "etfs"] as const).map((type) => (
             <button
@@ -103,6 +113,16 @@ export function StockSearchPage() {
               {type === "all" ? "All" : type === "stocks" ? "Stocks" : "ETFs"}
             </button>
           ))}
+
+          {hasActiveFilters && (
+            <button
+              onClick={clearFilters}
+              className="ml-auto inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+              Clear
+            </button>
+          )}
         </div>
 
         {industries.length > 0 && (
@@ -110,7 +130,9 @@ export function StockSearchPage() {
             {industries.map((ind) => (
               <button
                 key={ind}
-                onClick={() => setSelectedIndustry(selectedIndustry === ind ? null : ind)}
+                onClick={() =>
+                  setSelectedIndustry(selectedIndustry === ind ? null : ind)
+                }
                 className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
                   selectedIndustry === ind
                     ? "bg-accent text-accent-foreground"
@@ -124,62 +146,77 @@ export function StockSearchPage() {
         )}
       </div>
 
-      {!isLoading && rawResults.length > 0 && (
-        <p className="text-sm text-muted-foreground">
-          Showing {Math.min(visibleCount, filteredResults.length)} of {filteredResults.length} stocks
-          {selectedIndustry ? ` in ${selectedIndustry}` : ""}
-        </p>
+      {/* Result count */}
+      {!isLoading && filteredResults.length > 0 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Showing {Math.min(visibleResults.length, filteredResults.length)} of{" "}
+            {filteredResults.length} stocks
+            {selectedIndustry ? ` in ${selectedIndustry}` : ""}
+          </p>
+          {sseConnected && (
+            <div className="flex items-center gap-1.5 text-xs text-success">
+              <Radio className="w-3.5 h-3.5 animate-pulse" />
+              <span>Live</span>
+            </div>
+          )}
+        </div>
       )}
 
+      {/* Loading skeletons */}
       {isLoading && (
-        <div className="flex justify-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <StockCardSkeleton key={i} />
+          ))}
         </div>
       )}
 
+      {/* Empty state */}
       {!isLoading && filteredResults.length === 0 && (
-        <div className="text-center py-12 text-muted-foreground">
-          <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
-          <p>No stocks found.</p>
-        </div>
+        <EmptyStockState
+          hasFilters={hasActiveFilters}
+          onClearFilters={clearFilters}
+        />
       )}
 
+      {/* Results grid */}
       {!isLoading && visibleResults.length > 0 && (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {visibleResults.map((stock) => (
-              <Link
-                key={stock.symbol}
-                to={`/stocks/${stock.symbol}`}
-                className="bg-card border border-border rounded-xl p-4 hover:shadow-md transition-shadow group"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-lg font-bold text-primary">{stock.symbol}</span>
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
-                        {stock.market}
-                      </span>
-                      {isEtf(stock.symbol) && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium">
-                          ETF
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-1 truncate">{stock.name}</p>
-                    {stock.industry && (
-                      <p className="text-xs text-muted-foreground mt-1 truncate">{stock.industry}</p>
-                    )}
-                  </div>
-                  <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-accent transition-colors flex-shrink-0 mt-1" />
+            {visibleResults.map((stock, index) => {
+              const delays = ["delay-100", "delay-200", "delay-300", "delay-400", "delay-500"];
+              const delayClass = delays[index % delays.length];
+              const summary = summariesMap.get(stock.symbol);
+              const liveQuote = liveQuotes.get(stock.symbol);
+
+              // Prefer live SSE quote over cached summary
+              const price = liveQuote?.price ?? summary?.price ?? null;
+              const changePercent =
+                liveQuote?.change_percent ?? summary?.change_percent ?? null;
+
+              return (
+                <div
+                  key={stock.symbol}
+                  className={`animate-fade-in-up ${delayClass}`}
+                  onMouseEnter={() => handleMouseEnter(stock.symbol)}
+                >
+                  <StockListCard
+                    stock={stock}
+                    price={price}
+                    changePercent={changePercent}
+                    recommendation={summary?.recommendation}
+                    sparklineData={summary?.sparkline_data}
+                    isEtf={stock.is_etf ?? undefined}
+                  />
                 </div>
-              </Link>
-            ))}
+              );
+            })},
           </div>
 
           <div ref={sentinelRef} className="h-4" />
 
-          {visibleCount >= filteredResults.length && (
+          {visibleResults.length >= filteredResults.length && (
             <p className="text-center text-sm text-muted-foreground py-4">
               All {filteredResults.length} stocks shown
             </p>
