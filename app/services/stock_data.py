@@ -474,7 +474,11 @@ def sync_recent_prices_for_active_stocks(db: Session, lookback_days: Optional[in
 def get_realtime_quote(symbol: str) -> Optional[dict]:
     """Get real-time quote from twstock. Returns dict or None if failed."""
     _rate_limit()
-    rt = twstock.realtime.get(symbol)
+    try:
+        rt = twstock.realtime.get(symbol)
+    except Exception:
+        logger.warning("Real-time quote fetch failed for %s", symbol, exc_info=False)
+        return None
     if not rt.get("success"):
         return None
     info = rt.get("info", {})

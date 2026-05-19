@@ -16,9 +16,13 @@ async def _quote_stream(symbols: List[str], interval: float = 30.0):
         while True:
             quotes = []
             for symbol in symbols:
-                quote = await async_get_realtime_quote(symbol)
-                if quote:
-                    quotes.append(quote)
+                try:
+                    quote = await async_get_realtime_quote(symbol)
+                    if quote:
+                        quotes.append(quote)
+                except Exception:
+                    # Skip individual symbol failures; keep the stream alive
+                    continue
 
             payload = json.dumps({"quotes": quotes}, default=str)
             yield f"data: {payload}\n\n"

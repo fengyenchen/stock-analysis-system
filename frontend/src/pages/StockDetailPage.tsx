@@ -804,10 +804,17 @@ export function StockDetailPage() {
             className="w-full"
             style={{ height: 520, display: chartData.length > 0 ? "block" : "none" }}
           />
-          {lastSyncDuration !== null && chartData.length > 0 && (
-            <p className="text-xs text-muted-foreground mt-2 text-right">
-              Last sync took {formatDuration(lastSyncDuration)}
-            </p>
+          {chartData.length > 0 && (
+            <div className="flex items-center justify-between mt-2">
+              <p className="text-[10px] text-muted-foreground">
+                Data source: Yahoo Finance (primary) / Taiwan Stock Exchange (fallback)
+              </p>
+              {lastSyncDuration !== null && (
+                <p className="text-xs text-muted-foreground">
+                  Last sync took {formatDuration(lastSyncDuration)}
+                </p>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>
