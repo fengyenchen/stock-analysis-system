@@ -34,7 +34,7 @@ export function useStockSearch() {
   const initialType = (params.get("type") as AssetType) || "all";
   const initialIndustry = params.get("industry") || null;
 
-  const [query, setQuery] = useState(initialQuery);
+  const [query, setQueryState] = useState(initialQuery);
   const [assetType, setAssetType] = useState<AssetType>(initialType);
   const [selectedIndustry, setSelectedIndustry] = useState<string | null>(
     initialIndustry
@@ -65,16 +65,6 @@ export function useStockSearch() {
     }
   }, [debouncedQuery, assetType, selectedIndustry, navigate, location.pathname, location.search]);
 
-  // Reset pagination when filters change
-  useEffect(() => {
-    setSelectedIndustry(null);
-    setVisibleCount(40);
-  }, [debouncedQuery]);
-
-  useEffect(() => {
-    setVisibleCount(40);
-  }, [assetType, selectedIndustry]);
-
   // Fetch data
   const searchQuery = useQuery({
     queryKey: ["stock-search", debouncedQuery],
@@ -90,10 +80,13 @@ export function useStockSearch() {
     staleTime: 300_000,
   });
 
-  const rawResults =
-    debouncedQuery.length > 0
-      ? (searchQuery.data ?? [])
-      : (allQuery.data ?? []);
+  const rawResults = useMemo(
+    () =>
+      debouncedQuery.length > 0
+        ? (searchQuery.data ?? [])
+        : (allQuery.data ?? []),
+    [allQuery.data, debouncedQuery, searchQuery.data]
+  );
   const isLoading =
     debouncedQuery.length > 0 ? searchQuery.isLoading : allQuery.isLoading;
 
@@ -116,7 +109,10 @@ export function useStockSearch() {
     });
   }, [rawResults, assetType, selectedIndustry]);
 
-  const visibleResults = filteredResults.slice(0, visibleCount);
+  const visibleResults = useMemo(
+    () => filteredResults.slice(0, visibleCount),
+    [filteredResults, visibleCount]
+  );
 
   // Fetch batch summaries for visible stocks
   const visibleSymbols = useMemo(
@@ -164,19 +160,36 @@ export function useStockSearch() {
   const hasActiveFilters =
     debouncedQuery.length > 0 || assetType !== "all" || !!selectedIndustry;
 
+  const setQuery = useCallback((value: string) => {
+    setQueryState(value);
+    setSelectedIndustry(null);
+    setVisibleCount(40);
+  }, []);
+
+  const handleSetAssetType = useCallback((value: AssetType) => {
+    setAssetType(value);
+    setVisibleCount(40);
+  }, []);
+
+  const handleSetSelectedIndustry = useCallback((value: string | null) => {
+    setSelectedIndustry(value);
+    setVisibleCount(40);
+  }, []);
+
   const clearFilters = useCallback(() => {
-    setQuery("");
+    setQueryState("");
     setAssetType("all");
     setSelectedIndustry(null);
+    setVisibleCount(40);
   }, []);
 
   return {
     query,
     setQuery,
     assetType,
-    setAssetType,
+    setAssetType: handleSetAssetType,
     selectedIndustry,
-    setSelectedIndustry,
+    setSelectedIndustry: handleSetSelectedIndustry,
     sortBy,
     setSortBy,
     visibleResults,

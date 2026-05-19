@@ -12,11 +12,10 @@ from app.dependencies import get_current_active_user
 from app.models import Stock, StockPrice, StockSyncJob, StockSyncStatus, User
 from app.schemas import (
     StockFundamentalRead,
-    StockPriceRead,
     StockProfileRead,
     StockQuoteRead,
-    StockRecommendationRead,
     StockRead,
+    StockRecommendationRead,
     StockSummaryRead,
     StockSyncJobCreate,
     StockSyncJobRead,

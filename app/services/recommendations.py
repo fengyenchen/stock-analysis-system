@@ -1,4 +1,4 @@
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 from math import sqrt
 from typing import Sequence
 
@@ -12,7 +12,6 @@ from app.schemas import (
     StockRecommendationRead,
     SupportResistanceLevels,
 )
-
 
 DISCLAIMER = (
     "This is a technical signal generated from historical price data and is not financial advice."

@@ -15,7 +15,6 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
-from app.config import Settings
 
 # Use a separate test DB file so we don't clobber dev data
 TEST_DATABASE_URL = "sqlite:///./test_app.db"
@@ -65,6 +64,7 @@ def db_session():
 def client(db_session):
     """Yield a TestClient with DB dependency overridden."""
     from fastapi.testclient import TestClient
+
     from app.main import app
 
     def _override_get_db():
@@ -79,9 +79,10 @@ def client(db_session):
 def _make_authed_client(db_session, username, email, role=None):
     """Helper to create an authenticated TestClient."""
     from fastapi.testclient import TestClient
+
+    from app.database import get_db
     from app.main import app
     from app.models import User
-    from app.database import get_db
 
     def _override_get_db():
         yield db_session

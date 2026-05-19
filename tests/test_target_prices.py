@@ -1,4 +1,3 @@
-import pytest
 
 
 class TestTargetPricesPublicReads:
@@ -21,7 +20,6 @@ class TestTargetPricesAdminWrites:
         assert "Admin access required" in resp.json()["detail"]
 
     def test_delete_target_price_requires_admin(self, admin_client, auth_client, sample_stocks, db_session):
-        from app.models import StockTargetPrice
         # Admin creates a target price
         payload = {
             "analyst": "Goldman Sachs",

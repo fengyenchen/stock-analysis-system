@@ -201,7 +201,7 @@ export function PriceChart({ data, isLoading, isDark }: PriceChartProps) {
       chart.remove();
       chartRef.current = null;
     };
-  }, [candleData, areaData, volumeData, ma5Data, ma20Data, ma60Data, textColor, gridColor, borderColor, showMA5, showMA20, showMA60, chartType]);
+  }, [candleData, areaData, volumeData, ma5Data, ma20Data, ma60Data, sortedData.length, textColor, gridColor, borderColor, showMA5, showMA20, showMA60, chartType]);
 
   return (
     <div className="bg-card rounded-2xl border border-border shadow-sm animate-fade-in-up delay-200">

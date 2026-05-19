@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Union
+from typing import Any, Optional, cast
 
 import bcrypt
 from jose import JWTError, jwt
@@ -16,6 +16,9 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+TokenClaims = dict[str, Any]
 
 
 def create_access_token(user_id: int, role: Optional[str] = None, expires_delta: Optional[timedelta] = None) -> str:
@@ -35,7 +38,7 @@ def create_access_token(user_id: int, role: Optional[str] = None, expires_delta:
     if role:
         to_encode["role"] = role
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
-    return encoded_jwt
+    return cast(str, encoded_jwt)
 
 
 def create_refresh_token(user_id: int, role: Optional[str] = None, expires_delta: Optional[timedelta] = None) -> str:
@@ -55,14 +58,14 @@ def create_refresh_token(user_id: int, role: Optional[str] = None, expires_delta
     if role:
         to_encode["role"] = role
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
-    return encoded_jwt
+    return cast(str, encoded_jwt)
 
 
-def decode_token(token: Optional[str]) -> Optional[dict]:
+def decode_token(token: Optional[str]) -> Optional[TokenClaims]:
     if token is None:
         return None
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-        return payload
+        return cast(TokenClaims, payload)
     except (JWTError, AttributeError):
         return None

@@ -1,7 +1,5 @@
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.scheduler import _daily_stock_sync_job, start_scheduler, stop_scheduler
 
 

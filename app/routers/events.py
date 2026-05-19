@@ -47,7 +47,7 @@ async def stream_quotes(
     symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
     if not symbol_list:
         return StreamingResponse(
-            iter([f'data: {{"error": "No symbols provided"}}\n\n']),
+            iter(['data: {"error": "No symbols provided"}\n\n']),
             media_type="text/event-stream",
         )
 

@@ -7,6 +7,7 @@ import {
   deleteUserVisibility,
   listAllVisibility,
 } from "@/api/contentVisibility";
+import { getApiErrorMessage } from "@/api/client";
 import { toast } from "sonner";
 import {
   Shield,
@@ -67,8 +68,8 @@ export function AdminDashboardPage() {
       toast.success("User updated");
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
     },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.detail || "Failed to update user");
+    onError: (err: unknown) => {
+      toast.error(getApiErrorMessage(err, "Failed to update user"));
     },
   });
 
@@ -78,8 +79,8 @@ export function AdminDashboardPage() {
       toast.success("User deleted");
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
     },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.detail || "Failed to delete user");
+    onError: (err: unknown) => {
+      toast.error(getApiErrorMessage(err, "Failed to delete user"));
     },
   });
 
@@ -95,8 +96,8 @@ export function AdminDashboardPage() {
       queryClient.invalidateQueries({ queryKey: ["admin-content-visibility"] });
       queryClient.invalidateQueries({ queryKey: ["content-visibility"] });
     },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.detail || "Failed to update visibility");
+    onError: (err: unknown) => {
+      toast.error(getApiErrorMessage(err, "Failed to update visibility"));
     },
   });
 
@@ -107,8 +108,8 @@ export function AdminDashboardPage() {
       queryClient.invalidateQueries({ queryKey: ["admin-content-visibility"] });
       queryClient.invalidateQueries({ queryKey: ["content-visibility"] });
     },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.detail || "Failed to update visibility");
+    onError: (err: unknown) => {
+      toast.error(getApiErrorMessage(err, "Failed to update visibility"));
     },
   });
 

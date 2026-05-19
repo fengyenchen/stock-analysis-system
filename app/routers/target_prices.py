@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_current_active_user, require_admin
+from app.dependencies import require_admin
 from app.models import Stock, StockTargetPrice, User
 from app.schemas import StockTargetPriceCreate, StockTargetPriceRead
 

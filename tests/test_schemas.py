@@ -9,7 +9,6 @@ from app.schemas import (
     TokenPayload,
     UserBase,
     UserCreate,
-    UserRead,
     WatchlistBase,
 )
 

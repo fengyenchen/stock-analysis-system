@@ -3,16 +3,26 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from sqlalchemy import text
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from sqlalchemy import text
 
 from app.config import settings
-from app.database import engine, get_db
+from app.database import get_db
 from app.limiter import limiter
-from app.routers import admin, alerts, auth, content_visibility, events, portfolio, stocks, target_prices, watchlists
+from app.routers import (
+    admin,
+    alerts,
+    auth,
+    content_visibility,
+    events,
+    portfolio,
+    stocks,
+    target_prices,
+    watchlists,
+)
 from app.scheduler import start_scheduler, stop_scheduler
 
 API_V1_PREFIX = "/api/v1"

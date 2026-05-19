@@ -4,6 +4,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.config import settings
 
+
 # Build engine with dialect-specific options
 def build_engine(database_url: str):
     if database_url.startswith("sqlite"):

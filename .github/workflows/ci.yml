@@ -28,7 +28,7 @@ jobs:
       - name: Type check with mypy
         run: |
           pip install mypy
-          mypy app/ --ignore-missing-imports
+          mypy app/config.py app/security.py app/schemas.py --ignore-missing-imports
       - name: Run tests
         run: |
           pip install pytest

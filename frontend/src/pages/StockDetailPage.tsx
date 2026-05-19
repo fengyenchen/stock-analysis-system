@@ -120,7 +120,7 @@ export function StockDetailPage() {
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [buySellModal, setBuySellModal] = useState<{ type: "buy" | "sell" } | null>(null);
   const [, setLastSyncDuration] = useState<number | null>(null);
-  const [autoSyncAttempted, setAutoSyncAttempted] = useState(false);
+  const autoSyncAttemptedRef = useRef(false);
   const syncStartRef = useRef<number | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
 
@@ -195,6 +195,7 @@ export function StockDetailPage() {
   /* -- Mutations -- */
   const syncMutation = useMutation({
     mutationFn: () => {
+      setElapsedMs(0);
       syncStartRef.current = Date.now();
       return syncStockPrices(symbol!);
     },
@@ -243,10 +244,7 @@ export function StockDetailPage() {
 
   /* -- Effects -- */
   useEffect(() => {
-    if (!syncMutation.isPending) {
-      setElapsedMs(0);
-      return;
-    }
+    if (!syncMutation.isPending) return;
     const start = Date.now();
     const id = setInterval(() => setElapsedMs(Date.now() - start), 100);
     return () => clearInterval(id);
@@ -255,17 +253,17 @@ export function StockDetailPage() {
   useEffect(() => {
     if (
       isAuthenticated &&
-      !autoSyncAttempted &&
+      !autoSyncAttemptedRef.current &&
       historyQuery.data &&
       historyQuery.data.length === 0 &&
       !historyQuery.isLoading &&
       !syncMutation.isPending &&
       !syncMutation.isSuccess
     ) {
-      setAutoSyncAttempted(true);
+      autoSyncAttemptedRef.current = true;
       syncMutation.mutate();
     }
-  }, [isAuthenticated, historyQuery.data, historyQuery.isLoading, autoSyncAttempted, syncMutation]);
+  }, [isAuthenticated, historyQuery.data, historyQuery.isLoading, syncMutation]);
 
   /* -- Derived data -- */
   const quote = liveQuote || quoteQuery.data;

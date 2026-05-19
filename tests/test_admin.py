@@ -1,4 +1,3 @@
-import pytest
 
 from app.models import User
 
@@ -124,7 +123,6 @@ class TestAdminPagination:
         assert len(resp.json()) == 1
 
     def test_pagination_with_skip(self, admin_client, db_session):
-        from app.models import User
         # Ensure at least 2 users exist
         extra = User(username="extrauser", email="extra@example.com", hashed_password="x")
         db_session.add(extra)

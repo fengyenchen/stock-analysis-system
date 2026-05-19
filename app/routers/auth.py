@@ -1,6 +1,6 @@
 import hashlib
 import secrets
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer
@@ -10,7 +10,7 @@ from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_active_user
 from app.limiter import conditional_limit
-from app.models import User, TokenBlacklist, PasswordResetToken
+from app.models import PasswordResetToken, TokenBlacklist, User
 from app.schemas import (
     ChangePasswordRequest,
     LoginRequest,

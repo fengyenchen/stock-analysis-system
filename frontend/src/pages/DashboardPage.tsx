@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import { BarChart2, ChevronRight, List, Search, TrendingUp } from "lucide-react";
@@ -9,7 +9,7 @@ export function DashboardPage() {
   const { isAuthenticated } = useAuthStore();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
-  const [primaryWlId, setPrimaryWlId] = useState<string | null>(
+  const [preferredWlId, setPreferredWlId] = useState<string | null>(
     () => localStorage.getItem("primaryWatchlistId")
   );
 
@@ -20,24 +20,25 @@ export function DashboardPage() {
   });
 
   useEffect(() => {
-    if (watchlists && primaryWlId) {
-      const stillExists = watchlists.some((wl) => wl.id.toString() === primaryWlId);
-      if (!stillExists) {
-        setPrimaryWlId(null);
+    if (!watchlists) return;
+
+    if (preferredWlId) {
+      const stillExists = watchlists.some((wl) => wl.id.toString() === preferredWlId);
+      if (!stillExists && watchlists.length > 0) {
+        localStorage.setItem("primaryWatchlistId", watchlists[0].id.toString());
+      } else if (!stillExists) {
         localStorage.removeItem("primaryWatchlistId");
       }
+    } else if (watchlists.length > 0) {
+      localStorage.setItem("primaryWatchlistId", watchlists[0].id.toString());
     }
-  }, [watchlists, primaryWlId]);
+  }, [watchlists, preferredWlId]);
 
-  useEffect(() => {
-    if (watchlists && watchlists.length > 0 && !primaryWlId) {
-      const id = watchlists[0].id.toString();
-      setPrimaryWlId(id);
-      localStorage.setItem("primaryWatchlistId", id);
-    }
-  }, [watchlists, primaryWlId]);
+  const primaryWl = useMemo(() => {
+    if (!watchlists || watchlists.length === 0) return null;
+    return watchlists.find((wl) => wl.id.toString() === preferredWlId) ?? watchlists[0];
+  }, [watchlists, preferredWlId]);
 
-  const primaryWl = watchlists?.find((wl) => wl.id.toString() === primaryWlId) ?? null;
   const showHeroSearch =
     !isAuthenticated || wlLoading || !primaryWl || primaryWl.items.length === 0;
 
@@ -55,7 +56,7 @@ export function DashboardPage() {
   };
 
   const handleWatchlistChange = (id: string) => {
-    setPrimaryWlId(id);
+    setPreferredWlId(id);
     localStorage.setItem("primaryWatchlistId", id);
   };
 
@@ -120,7 +121,7 @@ export function DashboardPage() {
                   </div>
                   {watchlists && watchlists.length > 1 && (
                     <select
-                      value={primaryWlId ?? ""}
+                      value={primaryWl.id.toString()}
                       onChange={(e) => handleWatchlistChange(e.target.value)}
                       className="text-sm px-2 py-1 rounded-lg border border-border bg-muted focus:outline-none focus:ring-2 focus:ring-accent"
                     >

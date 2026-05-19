@@ -6,8 +6,6 @@ import pytest
 from fastapi import status
 
 from app.models import Stock, StockPrice, StockSyncJob
-from tests.conftest import login_user, register_user
-
 
 # ─── Public Stock Reads ───────────────────────────────────
 

@@ -5,6 +5,8 @@ import { getApiErrorMessage } from "@/api/client";
 import { toast } from "sonner";
 import { TrendingUp, Eye, EyeOff } from "lucide-react";
 
+const SPECIAL_PASSWORD_CHARS = '!@#$%^&*(),.?":{}|<>_-+=[]~/`\\\';';
+
 export function RegisterPage() {
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
@@ -22,7 +24,7 @@ export function RegisterPage() {
     if (!/[A-Z]/.test(password)) e.password = "Password must contain an uppercase letter";
     if (!/[a-z]/.test(password)) e.password = "Password must contain a lowercase letter";
     if (!/[0-9]/.test(password)) e.password = "Password must contain a digit";
-    if (!/[!@#$%^&*(),.?":{}|<>_\-+=\[\]~/`\\'\\;]/.test(password))
+    if (![...password].some((char) => SPECIAL_PASSWORD_CHARS.includes(char)))
       e.password = "Password must contain a special character";
     setErrors(e);
     return Object.keys(e).length === 0;

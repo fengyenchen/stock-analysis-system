@@ -1,18 +1,19 @@
 import asyncio
-import threading
 import logging
+import threading
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Iterable, Optional
 from zoneinfo import ZoneInfo
 
+import requests
+import twstock
+import twstock.proxy as _twstock_proxy
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
-
-import twstock
 from twstock.stock import TPEXFetcher, TWSEFetcher
 
 from app.config import settings
@@ -22,9 +23,6 @@ logger = logging.getLogger(__name__)
 
 # Monkey-patch twstock to reuse a single requests.Session with connection pooling.
 # The default get_session() creates a new Session per call → no keep-alive.
-import requests
-import twstock.proxy as _twstock_proxy
-
 _shared_session = requests.Session()
 _shared_session.mount("https://", _twstock_proxy._LegacyCertAdapter(pool_connections=20, pool_maxsize=20))
 _shared_session.mount("http://", _twstock_proxy._LegacyCertAdapter(pool_connections=20, pool_maxsize=20))
@@ -448,6 +446,7 @@ def sync_recent_prices_for_active_stocks(db: Session, lookback_days: Optional[in
     total = 0
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
+
     from app.database import SessionLocal
 
     def _sync_one(symbol: str) -> int:

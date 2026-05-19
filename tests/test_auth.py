@@ -1,9 +1,8 @@
 import pytest
 from fastapi import status
 
-from app.models import User, TokenBlacklist
-from app.security import create_access_token, create_refresh_token, get_password_hash
-
+from app.models import TokenBlacklist, User
+from app.security import create_refresh_token
 
 # ─── Helpers ──────────────────────────────────────────────
 
@@ -164,6 +163,7 @@ class TestMe:
 
         # Blacklist the token manually
         from jose import jwt
+
         from app.config import settings
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         blacklist = TokenBlacklist(token_jti=payload["jti"], expires_at=db_session.query(User).first().created_at)
@@ -200,6 +200,7 @@ class TestLogout:
 
         # Verify token is blacklisted
         from jose import jwt
+
         from app.config import settings
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         blacklisted = db_session.query(TokenBlacklist).filter(TokenBlacklist.token_jti == payload["jti"]).first()
@@ -228,6 +229,7 @@ class TestLogout:
 
     def test_logout_token_without_jti(self, client):
         from jose import jwt
+
         from app.config import settings
         # Create token without JTI
         token = jwt.encode(
@@ -275,6 +277,7 @@ class TestRefresh:
         refresh_token = login_resp.json()["refresh_token"]
 
         from jose import jwt
+
         from app.config import settings
         payload = jwt.decode(refresh_token, settings.secret_key, algorithms=[settings.algorithm])
         blacklist = TokenBlacklist(
@@ -310,6 +313,7 @@ class TestRefresh:
 
     def test_refresh_token_without_sub(self, client):
         from jose import jwt
+
         from app.config import settings
         token = jwt.encode(
             {"jti": "some-jti", "type": "refresh", "exp": 9999999999},
@@ -322,6 +326,7 @@ class TestRefresh:
 
     def test_refresh_token_without_jti(self, client):
         from jose import jwt
+
         from app.config import settings
         token = jwt.encode(
             {"sub": "1", "type": "refresh", "exp": 9999999999},
@@ -373,6 +378,7 @@ class TestTokenBlacklist:
 
         # Manually blacklist the refresh token
         from jose import jwt
+
         from app.config import settings
         payload = jwt.decode(refresh_token, settings.secret_key, algorithms=[settings.algorithm])
         entry = TokenBlacklist(token_jti=payload["jti"], expires_at=db_session.query(User).first().created_at)
@@ -407,8 +413,10 @@ class TestPasswordResetRequest:
 
 class TestPasswordReset:
     def _insert_token(self, db_session, user_email, *, expires_delta_hours=1, used=False):
-        import hashlib, secrets
-        from datetime import datetime, timezone, timedelta
+        import hashlib
+        import secrets
+        from datetime import datetime, timedelta, timezone
+
         from app.models import PasswordResetToken
 
         user = db_session.query(User).filter(User.email == user_email).first()

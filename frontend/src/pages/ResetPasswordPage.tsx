@@ -5,6 +5,8 @@ import { getApiErrorMessage } from "@/api/client";
 import { toast } from "sonner";
 import { TrendingUp, Eye, EyeOff } from "lucide-react";
 
+const SPECIAL_PASSWORD_CHARS = '!@#$%^&*(),.?":{}|<>_-+=[]~/`\\\';';
+
 export function ResetPasswordPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -23,7 +25,7 @@ export function ResetPasswordPage() {
     else if (!/[A-Z]/.test(password)) e.password = "Password must contain an uppercase letter";
     else if (!/[a-z]/.test(password)) e.password = "Password must contain a lowercase letter";
     else if (!/[0-9]/.test(password)) e.password = "Password must contain a digit";
-    else if (!/[!@#$%^&*(),.?":{}|<>_\-+=\[\]~/`\\'\\;]/.test(password))
+    else if (![...password].some((char) => SPECIAL_PASSWORD_CHARS.includes(char)))
       e.password = "Password must contain a special character";
     if (password !== confirmPassword) e.confirmPassword = "Passwords do not match";
     setErrors(e);

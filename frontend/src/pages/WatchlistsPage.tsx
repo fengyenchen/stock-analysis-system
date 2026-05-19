@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { listWatchlists, createWatchlist, deleteWatchlist } from "@/api/watchlists";
+import { getApiErrorMessage } from "@/api/client";
 import { toast } from "sonner";
 import { Plus, Trash2, List, ChevronRight } from "lucide-react";
 
@@ -23,8 +24,8 @@ export function WatchlistsPage() {
       setIsCreating(false);
       queryClient.invalidateQueries({ queryKey: ["watchlists"] });
     },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.detail || "Failed to create");
+    onError: (err: unknown) => {
+      toast.error(getApiErrorMessage(err, "Failed to create"));
     },
   });
 
@@ -34,8 +35,8 @@ export function WatchlistsPage() {
       toast.success("Watchlist deleted");
       queryClient.invalidateQueries({ queryKey: ["watchlists"] });
     },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.detail || "Failed to delete");
+    onError: (err: unknown) => {
+      toast.error(getApiErrorMessage(err, "Failed to delete"));
     },
   });
 

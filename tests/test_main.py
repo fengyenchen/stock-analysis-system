@@ -1,7 +1,5 @@
-import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
@@ -9,11 +7,10 @@ from app.main import app
 
 
 class TestHealth:
-    def test_health_check(self):
-        with TestClient(app) as client:
-            response = client.get("/health")
-            assert response.status_code == status.HTTP_200_OK
-            assert response.json() == {"status": "healthy", "database": "connected"}
+    def test_health_check(self, client):
+        response = client.get("/health")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"status": "healthy", "database": "connected"}
 
 
 class TestStartup:
