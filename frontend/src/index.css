@@ -34,6 +34,10 @@ html, body, #root {
   height: 100%;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   background-color: var(--color-background);
@@ -45,6 +49,15 @@ body {
 #root {
   display: flex;
   flex-direction: column;
+}
+
+/* Hide scrollbar for horizontal scroll containers */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 /* Animations */
@@ -86,4 +99,27 @@ body {
 .delay-500 {
   animation-delay: 0.5s;
   opacity: 0;
+}
+
+/* prefers-reduced-motion: disable animations */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-fade-in-up {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .delay-100,
+  .delay-200,
+  .delay-300,
+  .delay-400,
+  .delay-500 {
+    opacity: 1 !important;
+  }
 }

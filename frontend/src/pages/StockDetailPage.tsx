@@ -11,6 +11,8 @@ import {
   getStock,
   getStockPeers,
   getStockProfile,
+  getTargetPrices,
+  getStockFundamentals,
 } from "@/api/stocks";
 import { createAlert } from "@/api/alerts";
 import { listWatchlists, addWatchlistItem } from "@/api/watchlists";
@@ -34,6 +36,11 @@ import { RiskAssessment } from "@/components/stock/RiskAssessment";
 import { SupportResistance } from "@/components/stock/SupportResistance";
 import { PeerComparison } from "@/components/stock/PeerComparison";
 import { FooterDisclaimer } from "@/components/stock/FooterDisclaimer";
+import { QuickStatsGrid } from "@/components/stock/QuickStatsGrid";
+import { KeyMetricsGrid } from "@/components/stock/KeyMetricsGrid";
+import { AnalystConsensus } from "@/components/stock/AnalystConsensus";
+import { RelatedStocks } from "@/components/stock/RelatedStocks";
+import { FinancialHealthScores } from "@/components/stock/FinancialHealthScores";
 
 import {
   RefreshCw,
@@ -169,6 +176,19 @@ export function StockDetailPage() {
     queryKey: ["stock-recommendation", symbol],
     queryFn: () => getStockRecommendation(symbol!),
     enabled: !!symbol,
+  });
+
+  const targetPricesQuery = useQuery({
+    queryKey: ["target-prices", symbol],
+    queryFn: () => getTargetPrices(symbol!),
+    enabled: !!symbol,
+  });
+
+  const fundamentalsQuery = useQuery({
+    queryKey: ["stock-fundamentals", symbol],
+    queryFn: () => getStockFundamentals(symbol!),
+    enabled: !!symbol,
+    staleTime: 300000,
   });
 
   /* -- Mutations -- */
@@ -405,6 +425,31 @@ export function StockDetailPage() {
                   ? new Date(rec.as_of).toLocaleDateString("zh-TW") + " 15:30"
                   : undefined
               }
+            />
+
+            {/* Quick Stats Grid */}
+            <QuickStatsGrid
+              fundamentals={fundamentalsQuery.data || null}
+              currentPrice={quote?.price}
+            />
+
+            {/* Key Metrics Grid */}
+            <KeyMetricsGrid fundamentals={fundamentalsQuery.data || null} />
+
+            {/* Analyst Consensus */}
+            <AnalystConsensus
+              targetPrices={targetPricesQuery.data || []}
+              currentPrice={quote?.price}
+            />
+
+            {/* Related Stocks */}
+            <RelatedStocks symbol={symbol || ""} />
+
+            {/* Financial Health Scores */}
+            <FinancialHealthScores
+              fundamentals={fundamentalsQuery.data || null}
+              recommendation={rec || null}
+              currentPrice={quote?.price}
             />
           </div>
 

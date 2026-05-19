@@ -48,6 +48,13 @@ export interface StockFundamental {
   shares_outstanding: string | null;
   fifty_two_week_high: string | null;
   fifty_two_week_low: string | null;
+  revenue_growth: string | null;
+  profit_margins: string | null;
+  debt_to_equity: string | null;
+  return_on_equity: string | null;
+  free_cashflow: string | null;
+  beta: string | null;
+  forward_pe: string | null;
   sector: string | null;
   website: string | null;
   long_business_summary: string | null;

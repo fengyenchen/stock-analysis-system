@@ -320,6 +320,13 @@ class StockFundamentalRead(BaseModel):
     shares_outstanding: Optional[Decimal] = None
     fifty_two_week_high: Optional[Decimal] = None
     fifty_two_week_low: Optional[Decimal] = None
+    revenue_growth: Optional[Decimal] = None
+    profit_margins: Optional[Decimal] = None
+    debt_to_equity: Optional[Decimal] = None
+    return_on_equity: Optional[Decimal] = None
+    free_cashflow: Optional[Decimal] = None
+    beta: Optional[Decimal] = None
+    forward_pe: Optional[Decimal] = None
     sector: Optional[str] = None
     website: Optional[str] = None
     long_business_summary: Optional[str] = None

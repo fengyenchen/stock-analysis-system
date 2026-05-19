@@ -4,6 +4,7 @@ import {
   CandlestickSeries,
   HistogramSeries,
   LineSeries,
+  AreaSeries,
   type IChartApi,
   type CandlestickData,
   type HistogramData,
@@ -35,6 +36,7 @@ function computeMA(data: StockPrice[], period: number): LineData<Time>[] {
 export function PriceChart({ data, isLoading, isDark }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const [chartType, setChartType] = useState<"candle" | "area">("candle");
   const [showMA5, setShowMA5] = useState(true);
   const [showMA20, setShowMA20] = useState(true);
   const [showMA60, setShowMA60] = useState(false);
@@ -61,6 +63,13 @@ export function PriceChart({ data, isLoading, isDark }: PriceChartProps) {
       high: parseFloat(p.high_price),
       low: parseFloat(p.low_price),
       close: parseFloat(p.close_price),
+    }));
+  }, [sortedData]);
+
+  const areaData: LineData<Time>[] = useMemo(() => {
+    return sortedData.map((p) => ({
+      time: p.date as Time,
+      value: parseFloat(p.close_price),
     }));
   }, [sortedData]);
 
@@ -111,19 +120,33 @@ export function PriceChart({ data, isLoading, isDark }: PriceChartProps) {
       autoSize: true,
     });
 
-    const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor,
-      downColor,
-      borderUpColor: upColor,
-      borderDownColor: downColor,
-      wickUpColor: upColor,
-      wickDownColor: downColor,
-      priceScaleId: "right",
-    });
-    candleSeries.priceScale().applyOptions({
-      scaleMargins: { top: 0.05, bottom: 0.25 },
-    });
-    candleSeries.setData(candleData);
+    if (chartType === "candle") {
+      const candleSeries = chart.addSeries(CandlestickSeries, {
+        upColor,
+        downColor,
+        borderUpColor: upColor,
+        borderDownColor: downColor,
+        wickUpColor: upColor,
+        wickDownColor: downColor,
+        priceScaleId: "right",
+      });
+      candleSeries.priceScale().applyOptions({
+        scaleMargins: { top: 0.05, bottom: 0.25 },
+      });
+      candleSeries.setData(candleData);
+    } else {
+      const areaSeries = chart.addSeries(AreaSeries, {
+        topColor: "rgba(59, 130, 246, 0.4)",
+        bottomColor: "rgba(59, 130, 246, 0.01)",
+        lineColor: "#3b82f6",
+        lineWidth: 2,
+        priceScaleId: "right",
+      });
+      areaSeries.priceScale().applyOptions({
+        scaleMargins: { top: 0.05, bottom: 0.25 },
+      });
+      areaSeries.setData(areaData);
+    }
 
     const ma5Series = chart.addSeries(LineSeries, {
       color: "#3b82f6",
@@ -166,13 +189,36 @@ export function PriceChart({ data, isLoading, isDark }: PriceChartProps) {
       chart.remove();
       chartRef.current = null;
     };
-  }, [candleData, volumeData, ma5Data, ma20Data, ma60Data, textColor, gridColor, borderColor, showMA5, showMA20, showMA60]);
+  }, [candleData, areaData, volumeData, ma5Data, ma20Data, ma60Data, textColor, gridColor, borderColor, showMA5, showMA20, showMA60, chartType]);
 
   return (
     <div className="bg-card rounded-2xl border border-border shadow-sm animate-fade-in-up delay-200">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-6 py-4 border-b border-border gap-3">
         <h3 className="font-bold text-lg">價格走勢</h3>
         <div className="flex items-center gap-3 flex-wrap">
+          {/* Chart type toggle */}
+          <div className="flex items-center gap-1 bg-muted border border-border rounded-md p-0.5">
+            <button
+              onClick={() => setChartType("candle")}
+              className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                chartType === "candle"
+                  ? "bg-card text-primary shadow-sm border border-border"
+                  : "text-muted-foreground hover:text-primary"
+              }`}
+            >
+              蠟燭
+            </button>
+            <button
+              onClick={() => setChartType("area")}
+              className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                chartType === "area"
+                  ? "bg-card text-primary shadow-sm border border-border"
+                  : "text-muted-foreground hover:text-primary"
+              }`}
+            >
+              面積
+            </button>
+          </div>
           <label className="flex items-center gap-1.5 cursor-pointer">
             <input
               type="checkbox"

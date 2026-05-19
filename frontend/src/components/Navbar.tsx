@@ -58,7 +58,7 @@ export function Navbar() {
         </p>
       </div>
 
-      <nav className="bg-card border-b border-border sticky top-0 z-50">
+      <nav className="bg-card/80 backdrop-blur-xl border-b border-border sticky top-0 z-50">
         <div className="container mx-auto px-4 max-w-6xl">
           <div className="flex items-center justify-between h-14">
             <Link to="/" className="flex items-center gap-2 text-primary font-bold text-lg">
