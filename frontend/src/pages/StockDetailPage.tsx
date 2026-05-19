@@ -357,10 +357,10 @@ export function StockDetailPage() {
       )}
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="max-w-7xl mx-auto px-3 md:px-4 lg:px-8 py-4 md:py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
           {/* Left Column */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-2 space-y-4 md:space-y-6">
             {/* Stock Header */}
             {isVisible("stock_header") && (
               <StockHeader
@@ -475,7 +475,7 @@ export function StockDetailPage() {
           </div>
 
           {/* Right Column */}
-          <div className="space-y-6">
+          <div className="space-y-4 md:space-y-6">
             {/* Quick Actions */}
             {isVisible("quick_actions") && (
               <QuickActions

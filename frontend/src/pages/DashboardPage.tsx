@@ -56,22 +56,22 @@ export function DashboardPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div className="space-y-4 md:space-y-6 px-3 md:px-0 py-3 md:py-0">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
         {/* Left panel */}
         <div className="lg:col-span-2">
-          <div className="bg-card border border-border rounded-xl p-6 h-full">
+          <div className="bg-card border border-border rounded-xl p-4 md:p-6 h-full">
             {showHeroSearch ? (
               <div className="space-y-6">
                 <div>
-                  <h1 className="text-2xl font-bold text-primary mb-1">
+                  <h1 className="text-xl md:text-2xl font-bold text-primary mb-1">
                     探索台股，從這裡開始
                   </h1>
                   <p className="text-sm text-muted-foreground">
                     Search Taiwan stocks by symbol or company name.
                   </p>
                 </div>
-                <form onSubmit={handleSearch} className="flex gap-2">
+                <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <input
@@ -137,7 +137,7 @@ export function DashboardPage() {
                     <Link
                       key={stock.symbol}
                       to={`/stocks/${stock.symbol}`}
-                      className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted transition-colors group"
+                      className="flex items-center justify-between p-3 md:p-4 rounded-lg border border-border hover:bg-muted transition-colors group"
                     >
                       <div>
                         <span className="font-semibold text-primary text-sm">{stock.symbol}</span>
@@ -168,7 +168,7 @@ export function DashboardPage() {
 
         {/* Right panel — Quick Links */}
         <div>
-          <div className="bg-card border border-border rounded-xl p-6 h-full space-y-4">
+          <div className="bg-card border border-border rounded-xl p-4 md:p-6 h-full space-y-4">
             <div className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-accent" />
               <h2 className="text-base font-semibold text-primary">Quick Links</h2>
@@ -176,7 +176,7 @@ export function DashboardPage() {
             <div className="space-y-2">
               <Link
                 to="/stocks"
-                className="flex items-center gap-2 p-3 rounded-lg border border-border hover:bg-muted transition-colors group"
+                className="flex items-center gap-2 p-3 md:p-4 rounded-lg border border-border hover:bg-muted transition-colors group"
               >
                 <Search className="w-4 h-4 text-accent flex-shrink-0" />
                 <div>
@@ -186,7 +186,7 @@ export function DashboardPage() {
               </Link>
               <Link
                 to="/watchlists"
-                className="flex items-center gap-2 p-3 rounded-lg border border-border hover:bg-muted transition-colors group"
+                className="flex items-center gap-2 p-3 md:p-4 rounded-lg border border-border hover:bg-muted transition-colors group"
               >
                 <List className="w-4 h-4 text-accent flex-shrink-0" />
                 <div>
@@ -206,7 +206,7 @@ export function DashboardPage() {
       </div>
 
       {/* Market sector section */}
-      <div className="bg-card border border-border rounded-xl p-6">
+      <div className="bg-card border border-border rounded-xl p-4 md:p-6">
         <div className="flex items-center gap-2 mb-3">
           <BarChart2 className="w-4 h-4 text-accent" />
           <h2 className="text-base font-semibold text-primary">Market Sectors</h2>

@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
+import { useHaptic } from "@/hooks/useHaptic";
 import {
   Home,
   Search,
@@ -28,6 +29,7 @@ export function BottomTabBar() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const isAuthenticated = !!user;
+  const { trigger: haptic } = useHaptic();
 
   const isActive = (path: string) => {
     if (path === "/") return location.pathname === "/";
@@ -35,6 +37,7 @@ export function BottomTabBar() {
   };
 
   const handleTabClick = (tab: TabItem, e: React.MouseEvent) => {
+    haptic(8);
     if (tab.protected && !isAuthenticated) {
       e.preventDefault();
       navigate("/login", { state: { from: tab.path } });
