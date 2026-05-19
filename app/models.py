@@ -32,6 +32,7 @@ class User(Base):
     watchlists = relationship("Watchlist", back_populates="user", cascade="all, delete-orphan")
     price_alerts = relationship("PriceAlert", back_populates="user", cascade="all, delete-orphan")
     portfolio_transactions = relationship("PortfolioTransaction", back_populates="user", cascade="all, delete-orphan")
+    content_overrides = relationship("ContentVisibility", back_populates="user", cascade="all, delete-orphan")
 
 
 class TokenBlacklist(Base):
@@ -256,4 +257,24 @@ class PriceAlert(Base):
     __table_args__ = (
         Index("ix_price_alerts_user_id", "user_id"),
         Index("ix_price_alerts_stock_id", "stock_id"),
+    )
+
+
+class ContentVisibility(Base):
+    __tablename__ = "content_visibility"
+
+    id = Column(Integer, primary_key=True, index=True)
+    content_key = Column(String(50), nullable=False)
+    is_visible = Column(Boolean, default=True, nullable=False)
+    scope = Column(String(20), default="global", nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="content_overrides")
+
+    __table_args__ = (
+        UniqueConstraint("content_key", "user_id", name="uq_content_visibility_key_user"),
+        Index("ix_content_visibility_scope", "scope"),
+        Index("ix_content_visibility_user_id", "user_id"),
     )

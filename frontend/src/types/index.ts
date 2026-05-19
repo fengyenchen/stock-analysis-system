@@ -250,6 +250,21 @@ export interface PortfolioPosition {
   unrealized_pnl_percent?: string | null;
 }
 
+export interface ContentVisibility {
+  id: number;
+  content_key: string;
+  is_visible: boolean;
+  scope: string;
+  user_id?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContentVisibilityEffective {
+  content_key: string;
+  is_visible: boolean;
+}
+
 export interface PasswordResetRequest { email: string; }
 export interface PasswordResetConfirmRequest { token: string; new_password: string; }
 

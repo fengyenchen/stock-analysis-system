@@ -20,6 +20,7 @@ import { getApiErrorMessage } from "@/api/client";
 import { useAuthStore } from "@/stores/authStore";
 import { useSSEQuotes } from "@/hooks/useSSEQuotes";
 import { useTheme } from "@/hooks/useTheme";
+import { useContentVisibility } from "@/hooks/useContentVisibility";
 import type { StockPrice } from "@/types";
 import { toast } from "sonner";
 
@@ -59,7 +60,6 @@ import { Input } from "@/components/ui/Input";
 
 function aggregatePrices(prices: StockPrice[], resolution: "day" | "week" | "year"): StockPrice[] {
   if (resolution === "day") return prices;
-  // Week/Year aggregation omitted for brevity — PriceChart handles raw day data
   return prices;
 }
 
@@ -112,6 +112,7 @@ export function StockDetailPage() {
   const { user } = useAuthStore();
   const isAuthenticated = !!user;
   const { theme } = useTheme();
+  const { isVisible } = useContentVisibility();
 
   const [showAlertForm, setShowAlertForm] = useState(false);
   const [alertCondition, setAlertCondition] = useState<"above" | "below">("above");
@@ -337,7 +338,7 @@ export function StockDetailPage() {
   return (
     <div className="space-y-0">
       {/* Recommendation Banner */}
-      {rec && (
+      {isVisible("recommendation_banner") && rec && (
         <RecBanner
           recommendation={rec}
           targetPrice={rec.support_resistance?.target_price ?? undefined}
@@ -347,11 +348,13 @@ export function StockDetailPage() {
       )}
 
       {/* Metrics Strip */}
-      <MetricsStrip
-        quote={quote}
-        peRatio={profile?.pe_ratio ?? undefined}
-        dividendYield={profile?.dividend_yield ? (parseFloat(profile.dividend_yield) * 100).toFixed(2) + "%" : undefined}
-      />
+      {isVisible("metrics_strip") && (
+        <MetricsStrip
+          quote={quote}
+          peRatio={profile?.pe_ratio ?? undefined}
+          dividendYield={profile?.dividend_yield ? (parseFloat(profile.dividend_yield) * 100).toFixed(2) + "%" : undefined}
+        />
+      )}
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -359,17 +362,19 @@ export function StockDetailPage() {
           {/* Left Column */}
           <div className="lg:col-span-2 space-y-6">
             {/* Stock Header */}
-            <StockHeader
-              symbol={symbol || ""}
-              stock={stockQuery.data}
-              quote={quote}
-              recommendation={rec || undefined}
-              isUp={isUp}
-              onShare={handleShare}
-            />
+            {isVisible("stock_header") && (
+              <StockHeader
+                symbol={symbol || ""}
+                stock={stockQuery.data}
+                quote={quote}
+                recommendation={rec || undefined}
+                isUp={isUp}
+                onShare={handleShare}
+              />
+            )}
 
             {/* Alert Form */}
-            {showAlertForm && (
+            {isVisible("alert_form") && showAlertForm && (
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
@@ -409,59 +414,77 @@ export function StockDetailPage() {
             )}
 
             {/* Price Chart */}
-            <PriceChart data={chartData} isLoading={historyQuery.isLoading} isDark={isDark} />
+            {isVisible("price_chart") && (
+              <PriceChart data={chartData} isLoading={historyQuery.isLoading} isDark={isDark} />
+            )}
 
             {/* Technical Indicators */}
-            <TechnicalIndicators
-              recommendation={rec || undefined}
-              volumeAnalysis={volumeAnalysis}
-            />
+            {isVisible("technical_indicators") && (
+              <TechnicalIndicators
+                recommendation={rec || undefined}
+                volumeAnalysis={volumeAnalysis}
+              />
+            )}
 
             {/* Analysis Points */}
-            <AnalysisPoints
-              points={analysisPoints}
-              updatedAt={
-                rec?.as_of
-                  ? new Date(rec.as_of).toLocaleDateString("zh-TW") + " 15:30"
-                  : undefined
-              }
-            />
+            {isVisible("analysis_points") && (
+              <AnalysisPoints
+                points={analysisPoints}
+                updatedAt={
+                  rec?.as_of
+                    ? new Date(rec.as_of).toLocaleDateString("zh-TW") + " 15:30"
+                    : undefined
+                }
+              />
+            )}
 
             {/* Quick Stats Grid */}
-            <QuickStatsGrid
-              fundamentals={fundamentalsQuery.data || null}
-              currentPrice={quote?.price}
-            />
+            {isVisible("quick_stats_grid") && (
+              <QuickStatsGrid
+                fundamentals={fundamentalsQuery.data || null}
+                currentPrice={quote?.price}
+              />
+            )}
 
             {/* Key Metrics Grid */}
-            <KeyMetricsGrid fundamentals={fundamentalsQuery.data || null} />
+            {isVisible("key_metrics_grid") && (
+              <KeyMetricsGrid fundamentals={fundamentalsQuery.data || null} />
+            )}
 
             {/* Analyst Consensus */}
-            <AnalystConsensus
-              targetPrices={targetPricesQuery.data || []}
-              currentPrice={quote?.price}
-            />
+            {isVisible("analyst_consensus") && (
+              <AnalystConsensus
+                targetPrices={targetPricesQuery.data || []}
+                currentPrice={quote?.price}
+              />
+            )}
 
             {/* Related Stocks */}
-            <RelatedStocks symbol={symbol || ""} />
+            {isVisible("related_stocks") && (
+              <RelatedStocks symbol={symbol || ""} />
+            )}
 
             {/* Financial Health Scores */}
-            <FinancialHealthScores
-              fundamentals={fundamentalsQuery.data || null}
-              recommendation={rec || null}
-              currentPrice={quote?.price}
-            />
+            {isVisible("financial_health_scores") && (
+              <FinancialHealthScores
+                fundamentals={fundamentalsQuery.data || null}
+                recommendation={rec || null}
+                currentPrice={quote?.price}
+              />
+            )}
           </div>
 
           {/* Right Column */}
           <div className="space-y-6">
             {/* Quick Actions */}
-            <QuickActions
-              onBuy={() => setBuySellModal({ type: "buy" })}
-              onSell={() => setBuySellModal({ type: "sell" })}
-              onAlert={() => setShowAlertForm(!showAlertForm)}
-              onWatchlist={() => setShowAddMenu(!showAddMenu)}
-            />
+            {isVisible("quick_actions") && (
+              <QuickActions
+                onBuy={() => setBuySellModal({ type: "buy" })}
+                onSell={() => setBuySellModal({ type: "sell" })}
+                onAlert={() => setShowAlertForm(!showAlertForm)}
+                onWatchlist={() => setShowAddMenu(!showAddMenu)}
+              />
+            )}
 
             {/* Buy/Sell Modal */}
             {buySellModal && (
@@ -504,60 +527,70 @@ export function StockDetailPage() {
             )}
 
             {/* Signal Summary */}
-            <SignalSummary recommendation={rec || undefined} />
+            {isVisible("signal_summary") && (
+              <SignalSummary recommendation={rec || undefined} />
+            )}
 
             {/* Risk Assessment */}
-            <RiskAssessment riskMetrics={rec?.risk_metrics} />
+            {isVisible("risk_assessment") && (
+              <RiskAssessment riskMetrics={rec?.risk_metrics} />
+            )}
 
             {/* Support / Resistance */}
-            <SupportResistance
-              levels={rec?.support_resistance}
-              currentPrice={quote?.price}
-            />
+            {isVisible("support_resistance") && (
+              <SupportResistance
+                levels={rec?.support_resistance}
+                currentPrice={quote?.price}
+              />
+            )}
 
             {/* Peer Comparison */}
-            <PeerComparison peers={peerStocks} currentSymbol={symbol || ""} />
+            {isVisible("peer_comparison") && (
+              <PeerComparison peers={peerStocks} currentSymbol={symbol || ""} />
+            )}
 
             {/* Sync + CSV Actions */}
-            <Card>
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Data</span>
-                  {sseConnected && (
-                    <Badge variant="success" className="flex items-center gap-1 text-xs">
-                      <Radio className="w-3 h-3 animate-pulse" />
-                      Live
-                    </Badge>
-                  )}
-                </div>
-                {syncStatus && (
-                  <div className="text-xs text-muted-foreground space-y-1">
-                    <p>
-                      Status:{" "}
-                      <span className="font-medium text-primary">{syncStatus.status}</span>
-                    </p>
-                    <p>
-                      Synced: {syncStatus.synced_from || "—"} to {syncStatus.synced_to || "—"}
-                    </p>
+            {isVisible("sync_csv_actions") && (
+              <Card>
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Data</span>
+                    {sseConnected && (
+                      <Badge variant="success" className="flex items-center gap-1 text-xs">
+                        <Radio className="w-3 h-3 animate-pulse" />
+                        Live
+                      </Badge>
+                    )}
                   </div>
-                )}
-                {isAuthenticated && (
-                  <Button
-                    variant="outline"
-                    onClick={() => syncMutation.mutate()}
-                    disabled={syncMutation.isPending}
-                    className="w-full"
-                  >
-                    <RefreshCw className={`w-4 h-4 mr-2 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-                    {syncMutation.isPending ? `Syncing… ${formatDuration(elapsedMs)}` : "Sync Market Data"}
+                  {syncStatus && (
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <p>
+                        Status:{" "}
+                        <span className="font-medium text-primary">{syncStatus.status}</span>
+                      </p>
+                      <p>
+                        Synced: {syncStatus.synced_from || "—"} to {syncStatus.synced_to || "—"}
+                      </p>
+                    </div>
+                  )}
+                  {isAuthenticated && (
+                    <Button
+                      variant="outline"
+                      onClick={() => syncMutation.mutate()}
+                      disabled={syncMutation.isPending}
+                      className="w-full"
+                    >
+                      <RefreshCw className={`w-4 h-4 mr-2 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+                      {syncMutation.isPending ? `Syncing… ${formatDuration(elapsedMs)}` : "Sync Market Data"}
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="sm" onClick={handleExportCSV} className="w-full">
+                    <Download className="w-4 h-4 mr-2" />
+                    Export CSV
                   </Button>
-                )}
-                <Button variant="ghost" size="sm" onClick={handleExportCSV} className="w-full">
-                  <Download className="w-4 h-4 mr-2" />
-                  Export CSV
-                </Button>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
       </div>

@@ -406,3 +406,26 @@ class WatchlistWithQuotesRead(BaseModel):
     quotes: List[StockQuoteRead] = []
 
     model_config = {"from_attributes": True}
+
+
+# ─── Content Visibility ──────────────────────────────────
+
+class ContentVisibilityRead(BaseModel):
+    id: int
+    content_key: str
+    is_visible: bool
+    scope: str
+    user_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ContentVisibilityUpdate(BaseModel):
+    is_visible: bool
+
+
+class ContentVisibilityEffectiveRead(BaseModel):
+    content_key: str
+    is_visible: bool

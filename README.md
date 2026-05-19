@@ -20,6 +20,7 @@ A full-stack Taiwan stock market data platform with JWT authentication, real-tim
 - **Historical Prices** — view OHLCV historical data with date range filtering
 - **Watchlists** — create personal watchlists and track stock quotes
 - **Daily Sync** — automatic background sync of historical prices (configurable)
+- **Admin Dashboard** — role-based admin panel for user management
 - **Responsive UI** — modern SPA built with React and Tailwind CSS
 
 ## Project Structure
@@ -87,6 +88,19 @@ Run migrations:
 python3 -m alembic upgrade head
 ```
 
+### CLI Commands
+
+```bash
+# Promote a user to admin
+python -m app.cli make-admin --username alice
+
+# Sync stock list from twstock
+python -m app.cli sync-list
+
+# Backfill historical prices
+python -m app.cli backfill --days 365 --workers 4
+```
+
 ### 2. Backend Setup
 
 ```bash
@@ -151,6 +165,19 @@ Common status codes:
 | POST | `/api/v1/password-reset-requests` | Request a password reset token |
 | POST | `/api/v1/password-resets` | Reset password using a valid token |
 
+### Admin
+
+All admin endpoints require an authenticated user with `role: "admin"`.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/admin/users` | List all users (paginated) |
+| GET | `/api/v1/admin/users/{id}` | Get user details |
+| PATCH | `/api/v1/admin/users/{id}` | Update user role or active status |
+| DELETE | `/api/v1/admin/users/{id}` | Delete a user |
+
+Target price creation and deletion (`POST/DELETE /api/v1/stocks/{symbol}/target-prices`) are also admin-only operations.
+
 ### Stocks
 
 | Method | Endpoint | Description |
@@ -186,7 +213,7 @@ Run the backend test suite:
 python3 -m pytest tests/ -v
 ```
 
-The project includes 125+ tests covering authentication, security, stocks, watchlists, and schema validation.
+The project includes 275+ tests covering authentication, security, admin access, stocks, watchlists, target prices, and schema validation.
 
 ## Docker
 

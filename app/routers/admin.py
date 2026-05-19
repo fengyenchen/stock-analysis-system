@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_admin
-from app.models import User
-from app.schemas import UserAdminUpdate, UserRead
+from app.models import ContentVisibility, User
+from app.schemas import ContentVisibilityRead, ContentVisibilityUpdate, UserAdminUpdate, UserRead
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -99,4 +99,136 @@ def delete_user(
 
     db.delete(user)
     db.commit()
+    return None
+
+
+# ─── Content Visibility ──────────────────────────────────
+
+_CONTENT_KEYS = [
+    "recommendation_banner",
+    "metrics_strip",
+    "stock_header",
+    "price_chart",
+    "technical_indicators",
+    "analysis_points",
+    "quick_stats_grid",
+    "key_metrics_grid",
+    "analyst_consensus",
+    "related_stocks",
+    "financial_health_scores",
+    "quick_actions",
+    "signal_summary",
+    "risk_assessment",
+    "support_resistance",
+    "peer_comparison",
+    "sync_csv_actions",
+    "alert_form",
+]
+
+
+@router.get("/content-visibility", response_model=List[ContentVisibilityRead])
+def list_content_visibility(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """List all content visibility settings (global + per-user overrides)."""
+    return db.query(ContentVisibility).all()
+
+
+@router.patch("/content-visibility/global/{content_key}", response_model=ContentVisibilityRead)
+def set_global_visibility(
+    content_key: str,
+    update: ContentVisibilityUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Set a global content visibility toggle."""
+    if content_key not in _CONTENT_KEYS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid content_key. Must be one of: {', '.join(_CONTENT_KEYS)}",
+        )
+
+    setting = db.query(ContentVisibility).filter(
+        ContentVisibility.content_key == content_key,
+        ContentVisibility.scope == "global",
+    ).first()
+
+    if setting:
+        setting.is_visible = update.is_visible
+    else:
+        setting = ContentVisibility(
+            content_key=content_key,
+            is_visible=update.is_visible,
+            scope="global",
+        )
+        db.add(setting)
+
+    db.commit()
+    db.refresh(setting)
+    return setting
+
+
+@router.patch("/content-visibility/users/{user_id}/{content_key}", response_model=ContentVisibilityRead)
+def set_user_visibility(
+    user_id: int,
+    content_key: str,
+    update: ContentVisibilityUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Set a per-user content visibility override."""
+    if content_key not in _CONTENT_KEYS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid content_key. Must be one of: {', '.join(_CONTENT_KEYS)}",
+        )
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    override = db.query(ContentVisibility).filter(
+        ContentVisibility.content_key == content_key,
+        ContentVisibility.scope == "user",
+        ContentVisibility.user_id == user_id,
+    ).first()
+
+    if override:
+        override.is_visible = update.is_visible
+    else:
+        override = ContentVisibility(
+            content_key=content_key,
+            is_visible=update.is_visible,
+            scope="user",
+            user_id=user_id,
+        )
+        db.add(override)
+
+    db.commit()
+    db.refresh(override)
+    return override
+
+
+@router.delete("/content-visibility/users/{user_id}/{content_key}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user_visibility(
+    user_id: int,
+    content_key: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Remove a per-user content visibility override (reverts to global)."""
+    override = db.query(ContentVisibility).filter(
+        ContentVisibility.content_key == content_key,
+        ContentVisibility.scope == "user",
+        ContentVisibility.user_id == user_id,
+    ).first()
+
+    if override:
+        db.delete(override)
+        db.commit()
+
     return None

@@ -48,6 +48,11 @@ def test_rest_api_route_inventory():
         "/api/v1/watchlists/{watchlist_id}/quotes": {"GET"},
         "/api/v1/admin/users": {"GET"},
         "/api/v1/admin/users/{user_id}": {"GET", "PATCH", "DELETE"},
+        "/api/v1/admin/content-visibility": {"GET"},
+        "/api/v1/admin/content-visibility/global/{content_key}": {"PATCH"},
+        "/api/v1/admin/content-visibility/users/{user_id}/{content_key}": {"PATCH", "DELETE"},
+        "/api/v1/content-visibility": {"GET"},
+        "/api/v1/content-visibility/public": {"GET"},
     }
     api_v1_routes = {
         path: methods
