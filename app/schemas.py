@@ -37,6 +37,7 @@ class UserCreate(UserBase):
 class UserRead(UserBase):
     id: int
     is_active: bool
+    role: str
     created_at: datetime
     updated_at: datetime
 
@@ -46,6 +47,11 @@ class UserRead(UserBase):
 class UserUpdate(BaseModel):
     username: Optional[str] = Field(None, min_length=3, max_length=50)
     email: Optional[EmailStr] = None
+
+
+class UserAdminUpdate(BaseModel):
+    is_active: Optional[bool] = None
+    role: Optional[Literal["user", "admin"]] = None
 
 
 class ChangePasswordRequest(BaseModel):

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_current_active_user
+from app.dependencies import get_current_active_user, require_admin
 from app.models import Stock, StockTargetPrice, User
 from app.schemas import StockTargetPriceCreate, StockTargetPriceRead
 
@@ -38,9 +38,9 @@ def create_target_price(
     symbol: str,
     data: StockTargetPriceCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_admin),
 ):
-    """Add a target price for a stock (admin/analyst feature)."""
+    """Add a target price for a stock (admin-only)."""
     stock = db.query(Stock).filter(Stock.symbol == symbol, Stock.is_active == True).first()
     if not stock:
         raise HTTPException(
@@ -66,9 +66,9 @@ def delete_target_price(
     symbol: str,
     target_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_admin),
 ):
-    """Delete a target price."""
+    """Delete a target price (admin-only)."""
     stock = db.query(Stock).filter(Stock.symbol == symbol, Stock.is_active == True).first()
     if not stock:
         raise HTTPException(

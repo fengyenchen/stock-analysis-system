@@ -20,6 +20,7 @@ import {
   Wallet,
   ChevronDown,
   Settings,
+  Shield,
 } from "lucide-react";
 
 function getInitials(username: string): string {
@@ -100,6 +101,12 @@ export function Navbar() {
                 <Wallet className="w-4 h-4" />
                 <span className="hidden sm:inline">Portfolio</span>
               </Link>
+              {user?.role === "admin" && (
+                <Link to="/admin" className={navLinkClass("/admin")}>
+                  <Shield className="w-4 h-4" />
+                  <span className="hidden sm:inline">Admin</span>
+                </Link>
+              )}
             </div>
 
             <div className="flex items-center gap-2">

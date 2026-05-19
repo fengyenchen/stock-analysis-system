@@ -12,7 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from app.config import settings
 from app.database import engine, get_db
 from app.limiter import limiter
-from app.routers import alerts, auth, events, portfolio, stocks, target_prices, watchlists
+from app.routers import admin, alerts, auth, events, portfolio, stocks, target_prices, watchlists
 from app.scheduler import start_scheduler, stop_scheduler
 
 API_V1_PREFIX = "/api/v1"
@@ -64,6 +64,7 @@ app.include_router(target_prices.router, prefix=API_V1_PREFIX)
 app.include_router(alerts.router, prefix=API_V1_PREFIX)
 app.include_router(events.router, prefix=API_V1_PREFIX)
 app.include_router(portfolio.router, prefix=API_V1_PREFIX)
+app.include_router(admin.router, prefix=API_V1_PREFIX)
 
 
 @app.get("/health", tags=["Health"])

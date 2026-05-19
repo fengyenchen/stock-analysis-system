@@ -18,7 +18,7 @@ def get_password_hash(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
-def create_access_token(user_id: int, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(user_id: int, role: Optional[str] = None, expires_delta: Optional[timedelta] = None) -> str:
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
@@ -32,11 +32,13 @@ def create_access_token(user_id: int, expires_delta: Optional[timedelta] = None)
         "exp": expire,
         "iat": datetime.now(timezone.utc),
     }
+    if role:
+        to_encode["role"] = role
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
     return encoded_jwt
 
 
-def create_refresh_token(user_id: int, expires_delta: Optional[timedelta] = None) -> str:
+def create_refresh_token(user_id: int, role: Optional[str] = None, expires_delta: Optional[timedelta] = None) -> str:
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
@@ -50,6 +52,8 @@ def create_refresh_token(user_id: int, expires_delta: Optional[timedelta] = None
         "exp": expire,
         "iat": datetime.now(timezone.utc),
     }
+    if role:
+        to_encode["role"] = role
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
     return encoded_jwt
 

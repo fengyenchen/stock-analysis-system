@@ -4,6 +4,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { getMe } from "@/api/auth";
 import { Layout } from "@/components/Layout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { AdminRoute } from "@/components/AdminRoute";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const LoginPage = lazy(() => import("@/pages/LoginPage").then((m) => ({ default: m.LoginPage })));
@@ -18,6 +19,7 @@ const ResetPasswordPage = lazy(() => import("@/pages/ResetPasswordPage").then((m
 const AlertsPage = lazy(() => import("@/pages/AlertsPage").then((m) => ({ default: m.AlertsPage })));
 const PortfolioPage = lazy(() => import("@/pages/PortfolioPage").then((m) => ({ default: m.PortfolioPage })));
 const ProfilePage = lazy(() => import("@/pages/ProfilePage").then((m) => ({ default: m.ProfilePage })));
+const AdminDashboardPage = lazy(() => import("@/pages/AdminDashboardPage").then((m) => ({ default: m.AdminDashboardPage })));
 
 function PageLoader() {
   return (
@@ -119,6 +121,20 @@ function App() {
               element={
                 <ErrorBoundary>
                   <ProfilePage />
+                </ErrorBoundary>
+              }
+            />
+          </Route>
+        </Route>
+
+        {/* Admin routes */}
+        <Route element={<AdminRoute />}>
+          <Route element={<Layout />}>
+            <Route
+              path="/admin"
+              element={
+                <ErrorBoundary>
+                  <AdminDashboardPage />
                 </ErrorBoundary>
               }
             />

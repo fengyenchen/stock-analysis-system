@@ -81,8 +81,8 @@ def login(request: Request, credentials: LoginRequest, db: Session = Depends(get
             detail="User account is inactive",
         )
 
-    access_token = create_access_token(user_id=user.id)
-    refresh_token = create_refresh_token(user_id=user.id)
+    access_token = create_access_token(user_id=user.id, role=user.role)
+    refresh_token = create_refresh_token(user_id=user.id, role=user.role)
 
     return TokenPair(access_token=access_token, refresh_token=refresh_token)
 
@@ -174,8 +174,8 @@ def refresh(request: Request, request_data: RefreshRequest, db: Session = Depend
     blacklist_entry = TokenBlacklist(token_jti=jti, expires_at=expires_at)
     db.add(blacklist_entry)
 
-    new_access_token = create_access_token(user_id=user.id)
-    new_refresh_token = create_refresh_token(user_id=user.id)
+    new_access_token = create_access_token(user_id=user.id, role=user.role)
+    new_refresh_token = create_refresh_token(user_id=user.id, role=user.role)
 
     db.commit()
 
