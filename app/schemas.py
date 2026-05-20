@@ -296,7 +296,7 @@ class PriceAlertRead(BaseModel):
 
 class PriceAlertUpdate(BaseModel):
     is_active: Optional[bool] = None
-    target_price: Optional[Decimal] = None
+    target_price: Optional[Decimal] = Field(None, gt=0)
     condition: Optional[Literal["above", "below"]] = None
 
 
