@@ -24,6 +24,12 @@ const persister = createSyncStoragePersister({
   key: "twstock-query-cache",
 });
 
+if ("caches" in window) {
+  window.caches.delete("api-cache").catch(() => {
+    // silent fail
+  });
+}
+
 // Register PWA service worker (autoUpdate)
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
