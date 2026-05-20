@@ -1,289 +1,212 @@
-import { useState, useMemo, useEffect, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Link, useLocation } from "react-router-dom";
-import { searchStocks, listStocks } from "@/api/stocks";
-import {
-  ArrowRight,
-  Cpu,
-  Landmark,
-  Loader2,
-  Monitor,
-  Pill,
-  Radio,
-  Search,
-  Settings,
-  Ship,
-  Utensils,
-} from "lucide-react";
-
-const INDUSTRIES = [
-  { id: "semiconductor", name: "半導體業", icon: Cpu },
-  { id: "computer", name: "電腦及週邊設備業", icon: Monitor },
-  { id: "electronic", name: "電子零組件業", icon: Settings },
-  { id: "network", name: "通信網路業", icon: Radio },
-  { id: "finance", name: "金融保險業", icon: Landmark },
-  { id: "shipping", name: "航運業", icon: Ship },
-  { id: "medical", name: "生技醫療業", icon: Pill },
-  { id: "food", name: "食品工業", icon: Utensils },
-];
-
-type AssetType = "all" | "stock" | "etf";
-type PerformanceFilter = "none" | "gainers" | "losers";
-
-const BATCH_SIZE = 40;
-
-function getMockChange(symbol: string): number {
-  let hash = 0;
-  for (let i = 0; i < symbol.length; i++) {
-    hash = symbol.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const random = Math.abs(Math.sin(hash));
-  return parseFloat((random * 10 - 5).toFixed(2));
-}
+import { useCallback, useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Radio, Search, SlidersHorizontal, X } from "lucide-react";
+import { EmptyStockState } from "@/components/stock/EmptyStockState";
+import { StockCardSkeleton } from "@/components/stock/StockCardSkeleton";
+import { StockListCard } from "@/components/stock/StockListCard";
+import { getStock, getStockQuote, getStockRecommendation } from "@/api/stocks";
+import { useStockSearch } from "@/hooks/useStockSearch";
 
 export function StockSearchPage() {
-  const location = useLocation();
-  const [query, setQuery] = useState(
-    (location.state as { initialQuery?: string } | null)?.initialQuery ?? ""
-  );
-  const [selectedIndustry, setSelectedIndustry] = useState<string | null>(null);
-  const [assetType, setAssetType] = useState<AssetType>("all");
-  const [performance, setPerformance] = useState<PerformanceFilter>("none");
-  const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
-  const sentinelRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const searchQuery = useQuery({
-    queryKey: ["stock-search", query],
-    queryFn: () => searchStocks(query),
-    enabled: query.length > 0,
-  });
-
-  const allQuery = useQuery({
-    queryKey: ["stocks", 0, 3000],
-    queryFn: () => listStocks(0, 3000),
-    enabled: query.length === 0,
-  });
-
-  const rawResults = useMemo(() => {
-    if (query.length > 0) return searchQuery.data || [];
-    return allQuery.data || [];
-  }, [query, searchQuery.data, allQuery.data]);
-
-  const isLoading = query.length > 0 ? searchQuery.isLoading : allQuery.isLoading;
-
-  const filteredResults = useMemo(() => {
-    let filtered = rawResults.map((stock) => {
-      const changePercent = getMockChange(stock.symbol);
-      const isEtf = stock.symbol.startsWith("00") || stock.symbol.length >= 5;
-      return { ...stock, changePercent, isEtf };
-    });
-
-    if (selectedIndustry) filtered = filtered.filter((stock) => stock.industry === selectedIndustry);
-    if (assetType === "stock") filtered = filtered.filter((stock) => !stock.isEtf);
-    else if (assetType === "etf") filtered = filtered.filter((stock) => stock.isEtf);
-
-    if (performance === "gainers") {
-      filtered = filtered
-        .filter((stock) => stock.changePercent > 0)
-        .sort((a, b) => b.changePercent - a.changePercent);
-    } else if (performance === "losers") {
-      filtered = filtered
-        .filter((stock) => stock.changePercent < 0)
-        .sort((a, b) => a.changePercent - b.changePercent);
-    } else {
-      filtered = [...filtered].sort((a, b) => a.symbol.localeCompare(b.symbol));
-    }
-
-    return filtered;
-  }, [rawResults, selectedIndustry, assetType, performance]);
-
-  const visibleResults = filteredResults.slice(0, visibleCount);
-  const hasMore = visibleCount < filteredResults.length;
+  const {
+    query,
+    setQuery,
+    assetType,
+    setAssetType,
+    selectedIndustry,
+    setSelectedIndustry,
+    visibleResults,
+    filteredResults,
+    isLoading,
+    industries,
+    sentinelRef,
+    hasActiveFilters,
+    clearFilters,
+    summariesMap,
+    liveQuotes,
+    sseConnected,
+  } = useStockSearch();
 
   useEffect(() => {
-    setVisibleCount(BATCH_SIZE);
-  }, [query, selectedIndustry, assetType, performance]);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore) {
-          setVisibleCount((prev) => prev + BATCH_SIZE);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "/" && document.activeElement?.tagName !== "INPUT") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+      if (e.key === "Escape") {
+        if (document.activeElement === searchInputRef.current) {
+          searchInputRef.current?.blur();
         }
-      },
-      { threshold: 0.1, rootMargin: "200px" }
-    );
+        clearFilters();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [clearFilters]);
 
-    const sentinel = sentinelRef.current;
-    if (sentinel) observer.observe(sentinel);
-
-    return () => observer.disconnect();
-  }, [hasMore]);
+  const handleMouseEnter = useCallback(
+    (symbol: string) => {
+      queryClient.prefetchQuery({
+        queryKey: ["stock", symbol],
+        queryFn: () => getStock(symbol),
+        staleTime: 300_000,
+      });
+      queryClient.prefetchQuery({
+        queryKey: ["stock-quote", symbol],
+        queryFn: () => getStockQuote(symbol),
+        staleTime: 60_000,
+      });
+      queryClient.prefetchQuery({
+        queryKey: ["stock-recommendation", symbol],
+        queryFn: () => getStockRecommendation(symbol),
+        staleTime: 300_000,
+      });
+    },
+    [queryClient]
+  );
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold text-primary">Explore Market</h1>
-        <div className="relative w-full md:max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search symbol or name..."
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              if (e.target.value.length > 0) {
-                setSelectedIndustry(null);
-                setAssetType("all");
-                setPerformance("none");
-              }
-            }}
-            className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-accent"
-          />
-        </div>
+    <div className="space-y-6 px-4 md:px-0 py-4 md:py-0">
+      <h1 className="text-2xl font-bold text-primary">Stocks</h1>
+
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <input
+          ref={searchInputRef}
+          type="text"
+          placeholder="Search by symbol or name..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-accent"
+        />
+        {query && (
+          <button
+            onClick={() => setQuery("")}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary"
+            aria-label="Clear search"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="flex flex-wrap gap-4">
-          <div className="space-y-2">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Asset Type</span>
-            <div className="flex bg-muted p-1 rounded-lg">
-              {(["all", "stock", "etf"] as AssetType[]).map((type) => (
-                <button
-                  key={type}
-                  onClick={() => setAssetType(type)}
-                  className={`px-3 py-1 rounded-md text-sm font-medium transition-all ${
-                    assetType === type ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-primary"
-                  }`}
-                >
-                  {type === "all" ? "All" : type === "stock" ? "Stocks" : "ETFs"}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-2">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Daily Perf.</span>
-            <div className="flex bg-muted p-1 rounded-lg">
-              {(["none", "gainers", "losers"] as PerformanceFilter[]).map((filter) => (
-                <button
-                  key={filter}
-                  onClick={() => setPerformance(filter)}
-                  className={`px-3 py-1 rounded-md text-sm font-medium transition-all ${
-                    performance === filter ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-primary"
-                  }`}
-                >
-                  {filter === "none" ? "Default" : filter === "gainers" ? "Gainers" : "Losers"}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Industry Quick Filters</span>
-          <div className="flex flex-wrap gap-2">
+      <div className="sticky top-0 z-10 -mx-4 md:mx-0 px-4 md:px-0 py-3 bg-background/80 backdrop-blur border-y border-border space-y-3">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+          <SlidersHorizontal className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+          {(["all", "stocks", "etfs"] as const).map((type) => (
             <button
-              onClick={() => setSelectedIndustry(null)}
-              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                selectedIndustry === null
-                  ? "bg-accent border-accent text-accent-foreground"
-                  : "bg-card border-border text-muted-foreground hover:bg-muted"
+              key={type}
+              onClick={() => setAssetType(type)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex-shrink-0 ${
+                assetType === type
+                  ? "bg-accent text-accent-foreground"
+                  : "bg-muted text-muted-foreground hover:bg-accent/10"
               }`}
             >
-              All
+              {type === "all" ? "All" : type === "stocks" ? "Stocks" : "ETFs"}
             </button>
-            {INDUSTRIES.map((industry) => {
-              const Icon = industry.icon;
-              return (
-                <button
-                  key={industry.id}
-                  onClick={() => {
-                    setSelectedIndustry(selectedIndustry === industry.name ? null : industry.name);
-                    setQuery("");
-                  }}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                    selectedIndustry === industry.name
-                      ? "bg-accent border-accent text-accent-foreground"
-                      : "bg-card border-border text-muted-foreground hover:bg-muted"
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  {industry.name}
-                </button>
-              );
-            })}
-          </div>
+          ))}
+
+          {hasActiveFilters && (
+            <button
+              onClick={clearFilters}
+              className="ml-auto inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted transition-colors flex-shrink-0"
+            >
+              <X className="w-3.5 h-3.5" />
+              Clear
+            </button>
+          )}
         </div>
+
+        {industries.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto no-scrollbar">
+            {industries.map((industry) => (
+              <button
+                key={industry}
+                onClick={() =>
+                  setSelectedIndustry(selectedIndustry === industry ? null : industry)
+                }
+                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors flex-shrink-0 ${
+                  selectedIndustry === industry
+                    ? "bg-accent text-accent-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-accent/10"
+                }`}
+              >
+                {industry}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
+      {!isLoading && filteredResults.length > 0 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Showing {Math.min(visibleResults.length, filteredResults.length)} of{" "}
+            {filteredResults.length} stocks
+            {selectedIndustry ? ` in ${selectedIndustry}` : ""}
+          </p>
+          {sseConnected && (
+            <div className="flex items-center gap-1.5 text-xs text-success">
+              <Radio className="w-3.5 h-3.5 animate-pulse" />
+              <span>Live</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {isLoading && (
-        <div className="flex justify-center py-12">
-          <Loader2 className="animate-spin h-10 w-10 text-accent" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <StockCardSkeleton key={i} />
+          ))}
         </div>
       )}
 
       {!isLoading && filteredResults.length === 0 && (
-        <div className="bg-card border border-border rounded-xl py-16 text-center">
-          <Search className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-20" />
-          <p className="text-lg font-medium text-primary">No matching stocks found</p>
-          <p className="text-sm text-muted-foreground mt-1">Try adjusting your filters</p>
-        </div>
+        <EmptyStockState hasFilters={hasActiveFilters} onClearFilters={clearFilters} />
       )}
 
       {!isLoading && visibleResults.length > 0 && (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {visibleResults.map((stock) => (
-              <Link
-                key={stock.symbol}
-                to={`/stocks/${stock.symbol}`}
-                className="bg-card border border-border rounded-xl p-4 hover:border-accent hover:shadow-md transition-all group"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg font-bold text-primary group-hover:text-accent transition-colors">{stock.symbol}</span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-                        stock.isEtf ? "bg-orange-100 text-orange-700" : "bg-muted text-muted-foreground"
-                      }`}>
-                        {stock.isEtf ? "ETF" : stock.market}
-                      </span>
-                    </div>
-                    <p className="text-sm font-medium text-primary truncate max-w-[120px]">{stock.name}</p>
-                    <p className="text-xs text-muted-foreground">{stock.industry || "N/A"}</p>
-                  </div>
-                  <div className="text-right space-y-2">
-                    <div className={`text-sm font-bold px-2 py-1 rounded ${
-                      stock.changePercent > 0 ? "bg-red-50 text-red-600" : "bg-green-50 text-green-600"
-                    }`}>
-                      {stock.changePercent > 0 ? "+" : ""}{stock.changePercent}%
-                    </div>
-                    <div className="bg-muted p-1.5 rounded-lg group-hover:bg-accent/10 transition-colors inline-block">
-                      <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-accent" />
-                    </div>
-                  </div>
+            {visibleResults.map((stock, index) => {
+              const delays = ["delay-100", "delay-200", "delay-300", "delay-400", "delay-500"];
+              const delayClass = delays[index % delays.length];
+              const summary = summariesMap.get(stock.symbol);
+              const liveQuote = liveQuotes.get(stock.symbol);
+              const price = liveQuote?.price ?? summary?.price ?? null;
+              const changePercent =
+                liveQuote?.change_percent ?? summary?.change_percent ?? null;
+
+              return (
+                <div
+                  key={stock.symbol}
+                  className={`animate-fade-in-up ${delayClass}`}
+                  onMouseEnter={() => handleMouseEnter(stock.symbol)}
+                >
+                  <StockListCard
+                    stock={stock}
+                    price={price}
+                    changePercent={changePercent}
+                    recommendation={summary?.recommendation}
+                    sparklineData={summary?.sparkline_data}
+                    isEtf={stock.is_etf ?? undefined}
+                  />
                 </div>
-              </Link>
-            ))}
+              );
+            })}
           </div>
 
-          {hasMore && (
-            <div
-              ref={sentinelRef}
-              id="infinite-scroll-sentinel"
-              className="flex justify-center py-12 min-h-[100px]"
-            >
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="animate-spin w-4 h-4" />
-                Loading more stocks...
-              </div>
-            </div>
-          )}
+          <div ref={sentinelRef} className="h-4" />
 
-          {!hasMore && visibleResults.length > 0 && (
-            <div className="flex justify-center py-8">
-              <p className="text-sm text-muted-foreground">You've reached the end of the list.</p>
-            </div>
+          {visibleResults.length >= filteredResults.length && (
+            <p className="text-center text-sm text-muted-foreground py-4">
+              All {filteredResults.length} stocks shown
+            </p>
           )}
         </>
       )}

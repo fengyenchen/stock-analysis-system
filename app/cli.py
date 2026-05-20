@@ -99,6 +99,35 @@ def cmd_backfill(args: argparse.Namespace) -> int:
     return 0 if failed == 0 else 1
 
 
+def cmd_make_admin(args: argparse.Namespace) -> int:
+    db = SessionLocal()
+    try:
+        from app.models import User
+
+        if args.username:
+            user = db.query(User).filter(User.username == args.username).first()
+        elif args.email:
+            user = db.query(User).filter(User.email == args.email).first()
+        else:
+            print("Error: provide --username or --email", file=sys.stderr)
+            return 1
+
+        if not user:
+            print("Error: user not found", file=sys.stderr)
+            return 1
+
+        if user.role == "admin":
+            print(f"User '{user.username}' is already an admin.")
+            return 0
+
+        user.role = "admin"
+        db.commit()
+        print(f"User '{user.username}' promoted to admin.")
+        return 0
+    finally:
+        db.close()
+
+
 def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Stock Analysis System CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -121,12 +150,19 @@ def main(argv: List[str] | None = None) -> int:
         "--rate-limit", type=float, default=None, help="Override rate limit seconds between requests"
     )
 
+    # make-admin
+    make_admin_parser = subparsers.add_parser("make-admin", help="Promote a user to admin")
+    make_admin_parser.add_argument("--username", type=str, default=None, help="Username of the user to promote")
+    make_admin_parser.add_argument("--email", type=str, default=None, help="Email of the user to promote")
+
     args = parser.parse_args(argv)
 
     if args.command == "sync-list":
         return cmd_sync_list(args)
     if args.command == "backfill":
         return cmd_backfill(args)
+    if args.command == "make-admin":
+        return cmd_make_admin(args)
 
     parser.print_help()
     return 1

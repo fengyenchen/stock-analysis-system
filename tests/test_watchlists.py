@@ -1,11 +1,8 @@
 from unittest.mock import patch
 
-import pytest
 from fastapi import status
 
-from app.models import Stock, Watchlist, WatchlistItem
 from tests.conftest import login_user, register_user
-
 
 # ─── Auth Requirement ─────────────────────────────────────
 

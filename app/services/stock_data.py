@@ -1,20 +1,32 @@
 import asyncio
+import logging
 import threading
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Iterable, Optional
 from zoneinfo import ZoneInfo
 
+import requests
+import twstock
+import twstock.proxy as _twstock_proxy
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
-
-import twstock
+from twstock.stock import TPEXFetcher, TWSEFetcher
 
 from app.config import settings
 from app.models import Stock, StockPrice, StockSyncStatus
+
+logger = logging.getLogger(__name__)
+
+# Monkey-patch twstock to reuse a single requests.Session with connection pooling.
+# The default get_session() creates a new Session per call → no keep-alive.
+_shared_session = requests.Session()
+_shared_session.mount("https://", _twstock_proxy._LegacyCertAdapter(pool_connections=20, pool_maxsize=20))
+_shared_session.mount("http://", _twstock_proxy._LegacyCertAdapter(pool_connections=20, pool_maxsize=20))
+_twstock_proxy.get_session = lambda: _shared_session
 
 
 # ─── Helpers ──────────────────────────────────────────────
@@ -161,13 +173,103 @@ def sync_stock_list(db: Session) -> int:
 
 # ─── Historical Price Sync ────────────────────────────────
 
+def _fetch_month_with_fetcher(fetcher, symbol: str, year: int, month: int) -> list:
+    """Synchronous month fetch using a reusable fetcher."""
+    time.sleep(settings.stock_sync_rate_limit_seconds)
+    result = fetcher.fetch(year, month, symbol)
+    return result.get("data", [])
+
+
+def _fetch_historical_yfinance(symbol: str, market: str, start: date, end: date) -> list:
+    """Fetch historical prices via Yahoo Finance in a single request.
+
+    Returns a list of namedtuple objects compatible with twstock data rows.
+    """
+    try:
+        import yfinance as yf
+    except ImportError:
+        logger.debug("yfinance not installed, skipping fast path")
+        return []
+
+    yf_symbol = f"{symbol}.TW" if market == "TWSE" else f"{symbol}.TWO"
+    try:
+        # yfinance end date is exclusive, so add one day
+        end_exclusive = end + timedelta(days=1)
+        ticker = yf.Ticker(yf_symbol)
+        df = ticker.history(start=start.isoformat(), end=end_exclusive.isoformat(), auto_adjust=False)
+    except Exception as exc:
+        logger.warning("Yahoo Finance fetch failed for %s: %s", yf_symbol, exc)
+        return []
+
+    if df.empty:
+        logger.debug("Yahoo Finance returned no data for %s", yf_symbol)
+        return []
+
+    from collections import namedtuple
+
+    Data = namedtuple("Data", ["date", "open", "high", "low", "close", "capacity", "change"])
+
+    rows = []
+    prev_close = None
+    for idx, row in df.iterrows():
+        # Handle timezone-aware datetime index
+        row_date = idx.date() if hasattr(idx, "date") else idx
+
+        open_p = row.get("Open")
+        high_p = row.get("High")
+        low_p = row.get("Low")
+        close_p = row.get("Close")
+        volume = row.get("Volume")
+
+        # Skip rows with missing OHLC
+        if None in (open_p, high_p, low_p, close_p):
+            continue
+        try:
+            o_val = float(open_p)
+            h_val = float(high_p)
+            l_val = float(low_p)
+            c_val = float(close_p)
+        except Exception:
+            continue
+        if None in (o_val, h_val, l_val, c_val):
+            continue
+
+        change = None
+        if prev_close is not None:
+            try:
+                change = round(c_val - prev_close, 2)
+            except Exception:
+                pass
+
+        try:
+            vol_int = int(volume) if volume == volume else 0  # NaN check
+        except Exception:
+            vol_int = 0
+
+        rows.append(
+            Data(
+                date=row_date,
+                open=o_val,
+                high=h_val,
+                low=l_val,
+                close=c_val,
+                capacity=vol_int,
+                change=change,
+            )
+        )
+        prev_close = c_val
+
+    logger.info("Yahoo Finance returned %d rows for %s", len(rows), yf_symbol)
+    return rows
+
+
 def sync_historical_prices(
     db: Session,
     symbol: str,
     start: Optional[date] = None,
     end: Optional[date] = None,
 ) -> StockSyncResult:
-    """Fetch and cache historical prices for a stock from twstock by month."""
+    """Fetch and cache historical prices for a stock."""
     stock = db.query(Stock).filter(Stock.symbol == symbol).first()
     if not stock:
         raise ValueError(f"Stock {symbol} not found")
@@ -199,77 +301,128 @@ def sync_historical_prices(
     status.last_error = None
     db.commit()
 
-    upserted = 0
-    skipped = 0
-    months_requested = 0
+    months = list(_iter_months(start, end))
+    months_requested = len(months)
+
     insert_stmt = (
         postgresql_insert
         if db.get_bind().dialect.name == "postgresql"
         else sqlite_insert
     )
+
     try:
-        tws = twstock.Stock(symbol)
+        t0 = time.perf_counter()
+
+        # Fast path: Yahoo Finance fetches all history in one request
+        all_rows = _fetch_historical_yfinance(symbol, stock.market, start, end)
+        fetcher_used = "yfinance"
+
+        if not all_rows:
+            # Fallback: twstock month-by-month fetch
+            code_info = twstock.codes.get(symbol)
+            data_source = getattr(code_info, "data_source", "twse") if code_info else "twse"
+            fetcher = TWSEFetcher() if data_source == "twse" else TPEXFetcher()
+            fetcher_used = "twstock"
+
+            all_rows = []
+            if len(months) == 1:
+                rows = _fetch_month_with_fetcher(fetcher, symbol, months[0][0], months[0][1])
+                if rows:
+                    all_rows.extend(rows)
+            else:
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+
+                with ThreadPoolExecutor(max_workers=settings.stock_sync_max_concurrent) as executor:
+                    futures = {
+                        executor.submit(_fetch_month_with_fetcher, fetcher, symbol, year, month): (year, month)
+                        for year, month in months
+                    }
+                    for future in as_completed(futures):
+                        rows = future.result()
+                        if rows:
+                            all_rows.extend(rows)
+
+        t1 = time.perf_counter()
+
         seen_dates = set()
-        for year, month in _iter_months(start, end):
-            months_requested += 1
-            _rate_limit()
-            fetched = tws.fetch(year, month)
-            rows = fetched if fetched is not None else tws.data
-            for data in rows:
-                data_date = data.date.date() if isinstance(data.date, datetime) else data.date
-                if data_date < start or data_date > end:
-                    continue
-                if data_date in seen_dates:
-                    skipped += 1
-                    continue
-                seen_dates.add(data_date)
+        upserted = 0
+        skipped = 0
+        values_batch = []
 
-                open_price = _to_decimal(data.open)
-                high_price = _to_decimal(data.high)
-                low_price = _to_decimal(data.low)
-                close_price = _to_decimal(data.close)
-                if None in (open_price, high_price, low_price, close_price):
-                    skipped += 1
-                    continue
+        for data in all_rows:
+            data_date = data.date.date() if isinstance(data.date, datetime) else data.date
+            if data_date < start or data_date > end:
+                continue
+            if data_date in seen_dates:
+                skipped += 1
+                continue
+            seen_dates.add(data_date)
 
-                values = dict(
-                    stock_id=stock.id,
-                    date=data_date,
-                    open_price=open_price,
-                    high_price=high_price,
-                    low_price=low_price,
-                    close_price=close_price,
-                    volume=_to_int(data.capacity) or 0,
-                    change=_to_decimal(data.change),
-                )
-                stmt = insert_stmt(StockPrice).values(**values).on_conflict_do_update(
-                    index_elements=["stock_id", "date"],
-                    set_={
-                        "open_price": values["open_price"],
-                        "high_price": values["high_price"],
-                        "low_price": values["low_price"],
-                        "close_price": values["close_price"],
-                        "volume": values["volume"],
-                        "change": values["change"],
-                    },
-                )
-                result = db.execute(stmt)
-                upserted += result.rowcount or 0
+            open_price = _to_decimal(data.open)
+            high_price = _to_decimal(data.high)
+            low_price = _to_decimal(data.low)
+            close_price = _to_decimal(data.close)
+            if None in (open_price, high_price, low_price, close_price):
+                skipped += 1
+                continue
+
+            values_batch.append(dict(
+                stock_id=stock.id,
+                date=data_date,
+                open_price=open_price,
+                high_price=high_price,
+                low_price=low_price,
+                close_price=close_price,
+                volume=_to_int(data.capacity) or 0,
+                change=_to_decimal(data.change),
+            ))
+
+        if values_batch:
+            stmt = insert_stmt(StockPrice).values(values_batch)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["stock_id", "date"],
+                set_={
+                    "open_price": stmt.excluded.open_price,
+                    "high_price": stmt.excluded.high_price,
+                    "low_price": stmt.excluded.low_price,
+                    "close_price": stmt.excluded.close_price,
+                    "volume": stmt.excluded.volume,
+                    "change": stmt.excluded.change,
+                },
+            )
+            result = db.execute(stmt)
+            upserted = result.rowcount or 0
+
+        t2 = time.perf_counter()
+        logger.info(
+            "[%s] synced %d months → %d rows via %s (fetch %.2fs | db %.2fs | total %.2fs)",
+            symbol,
+            months_requested,
+            upserted,
+            fetcher_used,
+            t1 - t0,
+            t2 - t1,
+            t2 - t0,
+        )
 
         status.status = "success"
         status.synced_from = start if status.synced_from is None else min(status.synced_from, start)
         status.synced_to = end if status.synced_to is None else max(status.synced_to, end)
+        status.data_source = fetcher_used
         status.last_success_at = datetime.now(timezone.utc)
         status.last_error = None
         status.records_upserted = upserted
         db.commit()
     except Exception as exc:
-        db.rollback()
-        status = _get_or_create_sync_status(db, stock)
-        status.status = "failed"
-        status.last_attempt_at = datetime.now(timezone.utc)
-        status.last_error = str(exc)[:500]
-        db.commit()
+        # Re-query stock to avoid detached instance error after rollback
+        stock = db.query(Stock).filter(Stock.symbol == symbol).first()
+        if stock:
+            status = _get_or_create_sync_status(db, stock)
+            status.status = "failed"
+            status.last_attempt_at = datetime.now(timezone.utc)
+            status.last_error = str(exc)[:500]
+            status.data_source = None
+            db.commit()
         raise
 
     return StockSyncResult(
@@ -283,16 +436,37 @@ def sync_historical_prices(
 
 
 def sync_recent_prices_for_active_stocks(db: Session, lookback_days: Optional[int] = None) -> int:
-    """Refresh recent history for all active stocks after market close."""
+    """Refresh recent history for all active stocks after market close (parallel)."""
     if lookback_days is None:
         lookback_days = settings.stock_daily_sync_lookback_days
     end = _taipei_today()
     start = end - timedelta(days=lookback_days)
-    total = 0
+
     stocks = db.query(Stock).filter(Stock.is_active == True).all()
-    for stock in stocks:
-        result = sync_historical_prices(db, stock.symbol, start=start, end=end)
-        total += result.records_upserted
+    total = 0
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    from app.database import SessionLocal
+
+    def _sync_one(symbol: str) -> int:
+        db_thread = SessionLocal()
+        try:
+            result = sync_historical_prices(db_thread, symbol, start=start, end=end)
+            return result.records_upserted
+        except Exception:
+            return 0
+        finally:
+            db_thread.close()
+
+    with ThreadPoolExecutor(max_workers=settings.stock_sync_max_concurrent) as executor:
+        futures = {
+            executor.submit(_sync_one, stock.symbol): stock.symbol
+            for stock in stocks
+        }
+        for future in as_completed(futures):
+            total += future.result()
+
     return total
 
 
@@ -301,7 +475,11 @@ def sync_recent_prices_for_active_stocks(db: Session, lookback_days: Optional[in
 def get_realtime_quote(symbol: str) -> Optional[dict]:
     """Get real-time quote from twstock. Returns dict or None if failed."""
     _rate_limit()
-    rt = twstock.realtime.get(symbol)
+    try:
+        rt = twstock.realtime.get(symbol)
+    except Exception:
+        logger.debug("Real-time quote fetch failed for %s", symbol)
+        return None
     if not rt.get("success"):
         return None
     info = rt.get("info", {})
@@ -319,6 +497,9 @@ def get_realtime_quote(symbol: str) -> Optional[dict]:
     # Calculate change_percent if missing
     if change_percent is None and change is not None and open_p and open_p > 0:
         change_percent = (change / open_p * 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    if None in (price, open_p, high_p, low_p):
+        return None
 
     return {
         "symbol": info.get("code", symbol),
@@ -341,17 +522,6 @@ async def async_get_realtime_quote(symbol: str) -> Optional[dict]:
     """Async wrapper for get_realtime_quote using thread pool."""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, get_realtime_quote, symbol)
-
-
-async def async_sync_historical_prices(
-    db: Session,
-    symbol: str,
-    start: Optional[date] = None,
-    end: Optional[date] = None,
-) -> StockSyncResult:
-    """Async wrapper for sync_historical_prices using thread pool."""
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, sync_historical_prices, db, symbol, start, end)
 
 
 async def async_sync_stock_list(db: Session) -> int:

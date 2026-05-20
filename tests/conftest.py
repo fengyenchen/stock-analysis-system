@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Keep application startup deterministic under pytest.
 os.environ["DEBUG"] = "false"
+os.environ["ENVIRONMENT"] = "test"
 os.environ["STOCK_DAILY_SYNC_ENABLED"] = "false"
 
 import pytest
@@ -14,7 +15,6 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
-from app.config import Settings
 
 # Use a separate test DB file so we don't clobber dev data
 TEST_DATABASE_URL = "sqlite:///./test_app.db"
@@ -64,6 +64,7 @@ def db_session():
 def client(db_session):
     """Yield a TestClient with DB dependency overridden."""
     from fastapi.testclient import TestClient
+
     from app.main import app
 
     def _override_get_db():
@@ -73,6 +74,41 @@ def client(db_session):
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
+
+
+def _make_authed_client(db_session, username, email, role=None):
+    """Helper to create an authenticated TestClient."""
+    from fastapi.testclient import TestClient
+
+    from app.database import get_db
+    from app.main import app
+    from app.models import User
+
+    def _override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = _override_get_db
+    c = TestClient(app)
+
+    # Register user via API
+    resp = c.post("/api/v1/users", json={
+        "username": username,
+        "email": email,
+        "password": "Password123!",
+    })
+    if resp.status_code == 201 and role:
+        user = db_session.query(User).filter(User.username == username).first()
+        user.role = role
+        db_session.commit()
+
+    # Login
+    login_resp = c.post("/api/v1/sessions", json={
+        "username": username,
+        "password": "Password123!",
+    })
+    token = login_resp.json()["access_token"]
+    c.headers.update({"Authorization": f"Bearer {token}"})
+    return c
 
 
 # ─── Auth Helpers ─────────────────────────────────────────
@@ -93,14 +129,21 @@ def login_user(client, username="testuser", password="Password123!"):
 
 
 @pytest.fixture(scope="function")
-def auth_client(client):
-    """Yield a TestClient with an authenticated user."""
-    register_user(client)
-    login_resp = login_user(client)
-    token = login_resp.json()["access_token"]
-    client.headers.update({"Authorization": f"Bearer {token}"})
-    yield client
-    client.headers.pop("Authorization", None)
+def auth_client(db_session):
+    """Yield a TestClient with an authenticated regular user."""
+    from app.main import app
+    c = _make_authed_client(db_session, "testuser", "test@example.com")
+    yield c
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture(scope="function")
+def admin_client(db_session):
+    """Yield a TestClient with an authenticated admin user."""
+    from app.main import app
+    c = _make_authed_client(db_session, "adminuser", "admin@example.com", role="admin")
+    yield c
+    app.dependency_overrides.clear()
 
 
 # ─── Stock Fixtures ───────────────────────────────────────

@@ -10,11 +10,11 @@ from app.config import Settings
 class TestSettingsDefaults:
     def test_default_app_name(self):
         s = Settings()
-        assert s.app_name == "Auth Service"
+        assert s.app_name == "Taiwan Stock Analysis API"
 
     def test_default_environment(self):
         s = Settings()
-        assert s.environment == "development"
+        assert s.environment == "test"
 
     def test_default_debug(self):
         s = Settings()

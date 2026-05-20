@@ -1,5 +1,4 @@
-from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from datetime import datetime, timezone
 
 import pytest
 from fastapi import HTTPException, status
@@ -34,6 +33,7 @@ class TestGetCurrentUser:
 
     def test_token_without_sub_raises_401(self, db_session):
         from jose import jwt
+
         from app.config import settings
         token = jwt.encode(
             {"jti": "some-jti", "type": "access", "exp": 9999999999},
@@ -46,6 +46,7 @@ class TestGetCurrentUser:
 
     def test_token_without_jti_raises_401(self, db_session):
         from jose import jwt
+
         from app.config import settings
         token = jwt.encode(
             {"sub": "1", "type": "access", "exp": 9999999999},
@@ -64,9 +65,10 @@ class TestGetCurrentUser:
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_blacklisted_token_raises_401(self, db_session):
-        from app.security import create_access_token
         from jose import jwt
+
         from app.config import settings
+        from app.security import create_access_token
 
         user = User(username="bluser", email="bl@example.com", hashed_password="hp")
         db_session.add(user)

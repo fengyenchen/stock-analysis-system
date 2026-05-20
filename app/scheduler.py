@@ -7,7 +7,6 @@ from app.config import settings
 from app.database import SessionLocal
 from app.services.stock_data import sync_recent_prices_for_active_stocks
 
-
 _scheduler: Optional[BackgroundScheduler] = None
 
 

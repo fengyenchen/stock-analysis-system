@@ -1,1 +1,1 @@
-from app.routers.auth import router
+from app.routers.auth import router as router

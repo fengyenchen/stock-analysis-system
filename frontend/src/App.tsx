@@ -4,6 +4,8 @@ import { useAuthStore } from "@/stores/authStore";
 import { getMe } from "@/api/auth";
 import { Layout } from "@/components/Layout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { AdminRoute } from "@/components/AdminRoute";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const LoginPage = lazy(() => import("@/pages/LoginPage").then((m) => ({ default: m.LoginPage })));
 const RegisterPage = lazy(() => import("@/pages/RegisterPage").then((m) => ({ default: m.RegisterPage })));
@@ -14,6 +16,10 @@ const WatchlistsPage = lazy(() => import("@/pages/WatchlistsPage").then((m) => (
 const WatchlistDetailPage = lazy(() => import("@/pages/WatchlistDetailPage").then((m) => ({ default: m.WatchlistDetailPage })));
 const ForgotPasswordPage = lazy(() => import("@/pages/ForgotPasswordPage").then((m) => ({ default: m.ForgotPasswordPage })));
 const ResetPasswordPage = lazy(() => import("@/pages/ResetPasswordPage").then((m) => ({ default: m.ResetPasswordPage })));
+const AlertsPage = lazy(() => import("@/pages/AlertsPage").then((m) => ({ default: m.AlertsPage })));
+const PortfolioPage = lazy(() => import("@/pages/PortfolioPage").then((m) => ({ default: m.PortfolioPage })));
+const ProfilePage = lazy(() => import("@/pages/ProfilePage").then((m) => ({ default: m.ProfilePage })));
+const AdminDashboardPage = lazy(() => import("@/pages/AdminDashboardPage").then((m) => ({ default: m.AdminDashboardPage })));
 
 function PageLoader() {
   return (
@@ -41,14 +47,35 @@ function App() {
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
-        {/* Public routes — no auth required */}
+        {/* Public routes */}
         <Route element={<Layout />}>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/stocks" element={<StockSearchPage />} />
-          <Route path="/stocks/:symbol" element={<StockDetailPage />} />
+          <Route
+            path="/"
+            element={
+              <ErrorBoundary>
+                <DashboardPage />
+              </ErrorBoundary>
+            }
+          />
+          <Route
+            path="/stocks"
+            element={
+              <ErrorBoundary>
+                <StockSearchPage />
+              </ErrorBoundary>
+            }
+          />
+          <Route
+            path="/stocks/:symbol"
+            element={
+              <ErrorBoundary>
+                <StockDetailPage />
+              </ErrorBoundary>
+            }
+          />
         </Route>
 
-        {/* Auth routes — no layout */}
+        {/* Auth routes */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -57,8 +84,60 @@ function App() {
         {/* Protected routes */}
         <Route element={<ProtectedRoute />}>
           <Route element={<Layout />}>
-            <Route path="/watchlists" element={<WatchlistsPage />} />
-            <Route path="/watchlists/:id" element={<WatchlistDetailPage />} />
+            <Route
+              path="/watchlists"
+              element={
+                <ErrorBoundary>
+                  <WatchlistsPage />
+                </ErrorBoundary>
+              }
+            />
+            <Route
+              path="/watchlists/:id"
+              element={
+                <ErrorBoundary>
+                  <WatchlistDetailPage />
+                </ErrorBoundary>
+              }
+            />
+            <Route
+              path="/alerts"
+              element={
+                <ErrorBoundary>
+                  <AlertsPage />
+                </ErrorBoundary>
+              }
+            />
+            <Route
+              path="/portfolio"
+              element={
+                <ErrorBoundary>
+                  <PortfolioPage />
+                </ErrorBoundary>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <ErrorBoundary>
+                  <ProfilePage />
+                </ErrorBoundary>
+              }
+            />
+          </Route>
+        </Route>
+
+        {/* Admin routes */}
+        <Route element={<AdminRoute />}>
+          <Route element={<Layout />}>
+            <Route
+              path="/admin"
+              element={
+                <ErrorBoundary>
+                  <AdminDashboardPage />
+                </ErrorBoundary>
+              }
+            />
           </Route>
         </Route>
 

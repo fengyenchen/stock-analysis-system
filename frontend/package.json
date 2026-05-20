@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,10 +11,14 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
+    "@tanstack/query-sync-storage-persister": "^5.100.11",
     "@tanstack/react-query": "^5.100.1",
+    "@tanstack/react-query-persist-client": "^5.100.11",
     "axios": "^1.15.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "framer-motion": "^12.39.0",
+    "idb-keyval": "^6.2.2",
     "lightweight-charts": "^5.1.0",
     "lucide-react": "^1.11.0",
     "react": "^19.2.5",
@@ -40,8 +44,9 @@
     "globals": "^17.5.0",
     "postcss": "^8.5.10",
     "tailwindcss": "^4.2.4",
-    "typescript": "~6.0.2",
+    "typescript": "5.6",
     "typescript-eslint": "^8.58.2",
-    "vite": "^8.0.10"
+    "vite": "^8.0.10",
+    "vite-plugin-pwa": "^1.3.0"
   }
 }

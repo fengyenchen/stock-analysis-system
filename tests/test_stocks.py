@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -6,27 +6,37 @@ import pytest
 from fastapi import status
 
 from app.models import Stock, StockPrice, StockSyncJob
-from tests.conftest import login_user, register_user
 
+# ─── Public Stock Reads ───────────────────────────────────
 
-# ─── Auth Requirement ─────────────────────────────────────
-
-class TestStocksAuth:
-    def test_search_requires_auth(self, client):
+class TestStocksPublicReads:
+    def test_search_is_public(self, client, sample_stocks):
         response = client.get("/api/v1/stocks?q=台積")
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.status_code == status.HTTP_200_OK
 
-    def test_list_requires_auth(self, client):
+    def test_list_is_public(self, client, sample_stocks):
         response = client.get("/api/v1/stocks")
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.status_code == status.HTTP_200_OK
 
-    def test_quote_requires_auth(self, client):
+    @patch("app.services.stock_data.twstock.realtime.get")
+    def test_quote_is_public(self, mock_get, client, sample_stocks):
+        mock_get.return_value = {
+            "success": True,
+            "info": {"code": "2330", "name": "台積電"},
+            "realtime": {
+                "latest_trade_price": "850.00",
+                "open": "845.00",
+                "high": "855.00",
+                "low": "840.00",
+                "accumulate_trade_volume": "50000",
+            },
+        }
         response = client.get("/api/v1/stocks/2330/quotes/latest")
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.status_code == status.HTTP_200_OK
 
-    def test_history_requires_auth(self, client):
+    def test_history_is_public(self, client, sample_stocks):
         response = client.get("/api/v1/stocks/2330/prices")
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.status_code == status.HTTP_200_OK
 
     def test_sync_requires_auth(self, client):
         response = client.post("/api/v1/stock-sync-jobs", json={"symbol": "2330"})
@@ -311,18 +321,66 @@ class TestStockHistory:
         assert data[0]["date"] == "2024-01-01"
 
 
+# ─── Recommendation ───────────────────────────────────────
+
+class TestStockRecommendation:
+    def test_get_recommendation_no_history_returns_hold(self, client, sample_stocks):
+        response = client.get("/api/v1/stocks/2330/recommendation")
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["symbol"] == "2330"
+        assert data["recommendation"] == "hold"
+        assert data["confidence"] == 20
+        assert data["as_of"] is None
+        assert "Not enough historical price data" in data["reasons"]
+        assert "not financial advice" in data["disclaimer"]
+
+    def test_get_recommendation_buy(self, client, sample_stocks, db_session):
+        stock = db_session.query(Stock).filter(Stock.symbol == "2330").first()
+        for index in range(80):
+            close = Decimal(100 + index)
+            db_session.add(
+                StockPrice(
+                    stock_id=stock.id,
+                    date=date(2024, 1, 1) + timedelta(days=index),
+                    open_price=close,
+                    high_price=close,
+                    low_price=close,
+                    close_price=close,
+                    volume=120000,
+                )
+            )
+        db_session.commit()
+
+        response = client.get("/api/v1/stocks/2330/recommendation")
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["recommendation"] == "buy"
+        assert data["confidence"] >= 70
+        assert data["indicators"]["ma20"] is not None
+
+    def test_get_recommendation_stock_not_found(self, client):
+        response = client.get("/api/v1/stocks/9999/recommendation")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
 # ─── Sync ─────────────────────────────────────────────────
 
 class TestStockSync:
-    @patch("app.services.stock_data.twstock.Stock")
-    def test_sync_success(self, mock_stock_class, auth_client, sample_stocks, db_session):
+    @patch("app.services.stock_data._fetch_historical_yfinance", return_value=[])
+    @patch("app.services.stock_data.TWSEFetcher")
+    def test_sync_success(self, mock_fetcher_class, mock_yf, auth_client, sample_stocks, db_session):
         from collections import namedtuple
         Data = namedtuple("Data", ["date", "capacity", "turnover", "open", "high", "low", "close", "change", "transaction"])
-        mock_instance = mock_stock_class.return_value
-        mock_instance.data = [
-            Data(date=date(2024, 1, 1), capacity=100000, turnover=80000000, open=800.0, high=810.0, low=795.0, close=805.0, change=5.0, transaction=5000),
-        ]
-        mock_instance.fetch.return_value = mock_instance.data
+        mock_fetcher = mock_fetcher_class.return_value
+        mock_fetcher.fetch.return_value = {
+            "data": [
+                Data(date=date(2024, 1, 1), capacity=100000, turnover=80000000, open=800.0, high=810.0, low=795.0, close=805.0, change=5.0, transaction=5000),
+            ],
+        }
 
         response = auth_client.post(
             "/api/v1/stock-sync-jobs",
@@ -339,8 +397,9 @@ class TestStockSync:
         assert job_response.status_code == status.HTTP_200_OK
         assert job_response.json()["id"] == data["id"]
 
-    @patch("app.services.stock_data.twstock.Stock")
-    def test_sync_ignores_duplicate_prices(self, mock_stock_class, auth_client, sample_stocks, db_session):
+    @patch("app.services.stock_data._fetch_historical_yfinance", return_value=[])
+    @patch("app.services.stock_data.TWSEFetcher")
+    def test_sync_ignores_duplicate_prices(self, mock_fetcher_class, mock_yf, auth_client, sample_stocks, db_session):
         from collections import namedtuple
         Data = namedtuple(
             "Data",
@@ -360,43 +419,44 @@ class TestStockSync:
         )
         db_session.commit()
 
-        mock_instance = mock_stock_class.return_value
-        mock_instance.data = [
-            Data(
-                date=date(2024, 1, 1),
-                capacity=100000,
-                turnover=80000000,
-                open=800.0,
-                high=810.0,
-                low=795.0,
-                close=805.0,
-                change=5.0,
-                transaction=5000,
-            ),
-            Data(
-                date=date(2024, 1, 2),
-                capacity=120000,
-                turnover=96000000,
-                open=805.0,
-                high=815.0,
-                low=800.0,
-                close=810.0,
-                change=5.0,
-                transaction=6000,
-            ),
-            Data(
-                date=date(2024, 1, 2),
-                capacity=120000,
-                turnover=96000000,
-                open=805.0,
-                high=815.0,
-                low=800.0,
-                close=810.0,
-                change=5.0,
-                transaction=6000,
-            ),
-        ]
-        mock_instance.fetch.return_value = mock_instance.data
+        mock_fetcher = mock_fetcher_class.return_value
+        mock_fetcher.fetch.return_value = {
+            "data": [
+                Data(
+                    date=date(2024, 1, 1),
+                    capacity=100000,
+                    turnover=80000000,
+                    open=800.0,
+                    high=810.0,
+                    low=795.0,
+                    close=805.0,
+                    change=5.0,
+                    transaction=5000,
+                ),
+                Data(
+                    date=date(2024, 1, 2),
+                    capacity=120000,
+                    turnover=96000000,
+                    open=805.0,
+                    high=815.0,
+                    low=800.0,
+                    close=810.0,
+                    change=5.0,
+                    transaction=6000,
+                ),
+                Data(
+                    date=date(2024, 1, 2),
+                    capacity=120000,
+                    turnover=96000000,
+                    open=805.0,
+                    high=815.0,
+                    low=800.0,
+                    close=810.0,
+                    change=5.0,
+                    transaction=6000,
+                ),
+            ],
+        }
 
         response = auth_client.post(
             "/api/v1/stock-sync-jobs",
@@ -480,3 +540,54 @@ class TestLegacyStockRoutes:
     def test_action_oriented_stock_routes_are_removed(self, auth_client, path):
         response = auth_client.get(path)
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+
+class TestStockBatchSummary:
+    def test_batch_summary_success(self, client, sample_stocks, db_session):
+        stock = db_session.query(Stock).filter(Stock.symbol == "2330").first()
+        # Add price history
+        for i in range(25):
+            price = StockPrice(
+                stock_id=stock.id,
+                date=date(2024, 1, 1) + timedelta(days=i),
+                open_price=Decimal("800.00") + i,
+                high_price=Decimal("810.00") + i,
+                low_price=Decimal("790.00") + i,
+                close_price=Decimal("805.00") + i,
+                volume=10000 + i,
+                change=Decimal("5.00"),
+                change_percent=Decimal("0.50"),
+            )
+            db_session.add(price)
+        db_session.commit()
+
+        response = client.get("/api/v1/stocks/batch/summary?symbols=2330,2317")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) == 2
+
+        item = data[0]
+        assert item["symbol"] == "2330"
+        assert "name" in item
+        assert "price" in item
+        assert "recommendation" in item
+        assert "sparkline_data" in item
+        assert len(item["sparkline_data"]) == 20
+
+    def test_batch_summary_empty_symbols(self, client):
+        response = client.get("/api/v1/stocks/batch/summary?symbols=")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_batch_summary_too_many_symbols(self, client):
+        symbols = ",".join([str(i) for i in range(55)])
+        response = client.get(f"/api/v1/stocks/batch/summary?symbols={symbols}")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_batch_summary_invalid_symbol_ignored(self, client, sample_stocks):
+        response = client.get("/api/v1/stocks/batch/summary?symbols=FAKE999,2330")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["symbol"] == "2330"

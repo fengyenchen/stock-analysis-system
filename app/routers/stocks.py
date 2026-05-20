@@ -1,21 +1,30 @@
+import csv
+import io
 from datetime import date, datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import get_current_active_user
 from app.models import Stock, StockPrice, StockSyncJob, StockSyncStatus, User
 from app.schemas import (
-    StockPriceRead,
+    StockFundamentalRead,
+    StockProfileRead,
     StockQuoteRead,
     StockRead,
+    StockRecommendationRead,
+    StockSummaryRead,
     StockSyncJobCreate,
     StockSyncJobRead,
     StockSyncStatusRead,
 )
+from app.services.fundamentals import get_stock_fundamentals
+from app.services.recommendations import get_stock_recommendation
 from app.services.stock_data import async_get_realtime_quote, sync_historical_prices
+from app.services.summaries import get_stock_summaries
 
 router = APIRouter(prefix="/stocks", tags=["Stocks"])
 sync_jobs_router = APIRouter(prefix="/stock-sync-jobs", tags=["Stock Sync Jobs"])
@@ -52,6 +61,27 @@ def list_stocks(
         query = query.filter((Stock.symbol.ilike(f"%{q}%")) | (Stock.name.ilike(f"%{q}%")))
     stocks = query.order_by(Stock.symbol).offset(offset).limit(limit).all()
     return stocks
+
+
+@router.get("/batch/summary", response_model=List[StockSummaryRead])
+def get_stock_batch_summary(
+    symbols: str = Query(..., description="Comma-separated stock symbols"),
+    db: Session = Depends(get_db),
+):
+    """Get enriched summaries (price, change, recommendation, sparkline) for multiple stocks."""
+    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    if not symbol_list:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No symbols provided",
+        )
+    if len(symbol_list) > 50:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum 50 symbols allowed per request",
+        )
+    summaries = get_stock_summaries(db, symbol_list)
+    return summaries
 
 
 @router.get("/{symbol}", response_model=StockRead)
@@ -92,14 +122,15 @@ async def get_stock_quote(
     return StockQuoteRead(**quote)
 
 
-@router.get("/{symbol}/prices", response_model=List[StockPriceRead])
+@router.get("/{symbol}/prices")
 def get_stock_history(
     symbol: str,
     start: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
     end: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
+    format: str = Query("json", pattern=r"^(json|csv)$"),
     db: Session = Depends(get_db),
 ):
-    """Get cached historical prices for a stock."""
+    """Get cached historical prices for a stock (JSON or CSV)."""
     stock = db.query(Stock).filter(Stock.symbol == symbol).first()
     if not stock:
         raise HTTPException(
@@ -115,7 +146,44 @@ def get_stock_history(
         query = query.filter(StockPrice.date <= end)
 
     prices = query.order_by(StockPrice.date.desc()).all()
+
+    if format == "csv":
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["date", "open", "high", "low", "close", "volume", "change"])
+        for p in prices:
+            writer.writerow([
+                p.date.isoformat(),
+                p.open_price,
+                p.high_price,
+                p.low_price,
+                p.close_price,
+                p.volume,
+                p.change,
+            ])
+        output.seek(0)
+        return StreamingResponse(
+            output,
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{symbol}_prices.csv"'},
+        )
+
     return prices
+
+
+@router.get("/{symbol}/recommendation", response_model=StockRecommendationRead)
+def get_stock_recommendation_endpoint(
+    symbol: str,
+    db: Session = Depends(get_db),
+):
+    """Get a rule-based technical trading signal for a stock."""
+    stock = db.query(Stock).filter(Stock.symbol == symbol, Stock.is_active == True).first()
+    if not stock:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Stock {symbol} not found",
+        )
+    return get_stock_recommendation(db, stock)
 
 
 @router.get("/{symbol}/sync-status", response_model=StockSyncStatusRead)
@@ -140,6 +208,7 @@ def get_stock_sync_status(
         status=sync_status.status,
         synced_from=sync_status.synced_from,
         synced_to=sync_status.synced_to,
+        data_source=sync_status.data_source,
         last_attempt_at=sync_status.last_attempt_at,
         last_success_at=sync_status.last_success_at,
         last_error=sync_status.last_error,
@@ -217,3 +286,86 @@ def get_stock_sync_job(
             detail="Stock sync job not found",
         )
     return _read_stock_sync_job(job)
+
+
+@router.get("/{symbol}/peers", response_model=list[StockRead])
+def get_stock_peers(
+    symbol: str,
+    limit: int = Query(5, ge=1, le=20),
+    db: Session = Depends(get_db),
+):
+    """Get peer stocks in the same industry."""
+    stock = db.query(Stock).filter(Stock.symbol == symbol, Stock.is_active == True).first()
+    if not stock:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Stock {symbol} not found",
+        )
+
+    if not stock.industry:
+        return []
+
+    peers = (
+        db.query(Stock)
+        .filter(
+            Stock.industry == stock.industry,
+            Stock.is_active == True,
+            Stock.symbol != symbol,
+        )
+        .order_by(Stock.symbol)
+        .limit(limit)
+        .all()
+    )
+    return peers
+
+
+@router.get("/{symbol}/fundamentals", response_model=StockFundamentalRead)
+def get_stock_fundamentals_endpoint(
+    symbol: str,
+    db: Session = Depends(get_db),
+):
+    """Get stock fundamentals (P/E, dividend yield, market cap, etc.) from yfinance."""
+    stock = db.query(Stock).filter(Stock.symbol == symbol, Stock.is_active == True).first()
+    if not stock:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Stock {symbol} not found",
+        )
+
+    fundamental = get_stock_fundamentals(db, stock)
+    if not fundamental:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to fetch fundamentals data",
+        )
+
+    return fundamental
+
+
+@router.get("/{symbol}/profile", response_model=StockProfileRead)
+def get_stock_profile(
+    symbol: str,
+    db: Session = Depends(get_db),
+):
+    """Get stock profile with fundamentals merged."""
+    stock = db.query(Stock).filter(Stock.symbol == symbol, Stock.is_active == True).first()
+    if not stock:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Stock {symbol} not found",
+        )
+
+    fundamental = get_stock_fundamentals(db, stock)
+
+    return StockProfileRead(
+        symbol=stock.symbol,
+        name=stock.name,
+        market=stock.market,
+        industry=stock.industry,
+        sector=fundamental.sector if fundamental else None,
+        website=fundamental.website if fundamental else None,
+        long_business_summary=fundamental.long_business_summary if fundamental else None,
+        pe_ratio=fundamental.pe_ratio if fundamental else None,
+        dividend_yield=fundamental.dividend_yield if fundamental else None,
+        market_cap=fundamental.market_cap if fundamental else None,
+    )

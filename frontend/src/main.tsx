@@ -1,8 +1,11 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import { BrowserRouter } from "react-router-dom";
 import { Toaster } from "sonner";
+import { ThemeProvider } from "@/providers/ThemeProvider";
 import "./index.css";
 import App from "./App.tsx";
 
@@ -11,17 +14,45 @@ const queryClient = new QueryClient({
     queries: {
       refetchOnWindowFocus: false,
       retry: 1,
+      gcTime: 1000 * 60 * 60 * 24, // 24 hours
     },
   },
 });
 
+const persister = createSyncStoragePersister({
+  storage: window.localStorage,
+  key: "twstock-query-cache",
+});
+
+if ("caches" in window) {
+  window.caches.delete("api-cache").catch(() => {
+    // silent fail
+  });
+}
+
+// Register PWA service worker (autoUpdate)
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("/sw.js")
+      .catch(() => {
+        // silent fail
+      });
+  });
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <App />
-        <Toaster position="top-right" richColors />
-      </BrowserRouter>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24 }}
+      >
+        <BrowserRouter>
+          <App />
+          <Toaster position="top-right" richColors />
+        </BrowserRouter>
+      </PersistQueryClientProvider>
+    </ThemeProvider>
   </StrictMode>
 );

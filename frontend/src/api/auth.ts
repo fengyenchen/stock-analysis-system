@@ -6,6 +6,8 @@ import type {
   User,
   PasswordResetRequest,
   PasswordResetConfirmRequest,
+  UserUpdate,
+  ChangePasswordRequest,
 } from "@/types";
 
 export async function login(data: LoginRequest): Promise<TokenPair> {
@@ -35,4 +37,13 @@ export async function requestPasswordReset(data: PasswordResetRequest): Promise<
 
 export async function resetPassword(data: PasswordResetConfirmRequest): Promise<void> {
   await apiClient.post("password-resets", data);
+}
+
+export async function updateProfile(data: UserUpdate): Promise<User> {
+  const res = await apiClient.patch<User>("users/me", data);
+  return res.data;
+}
+
+export async function changePassword(data: ChangePasswordRequest): Promise<void> {
+  await apiClient.post("users/me/change-password", data);
 }

@@ -1,16 +1,18 @@
 import hashlib
 import secrets
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_active_user
-from app.models import User, TokenBlacklist, PasswordResetToken
+from app.limiter import conditional_limit
+from app.models import PasswordResetToken, TokenBlacklist, User
 from app.schemas import (
+    ChangePasswordRequest,
     LoginRequest,
     PasswordResetConfirm,
     PasswordResetRequestCreate,
@@ -18,6 +20,7 @@ from app.schemas import (
     TokenPair,
     UserCreate,
     UserRead,
+    UserUpdate,
 )
 from app.security import (
     create_access_token,
@@ -31,7 +34,8 @@ router = APIRouter(tags=["Authentication"])
 
 
 @router.post("/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)
-def register(user_in: UserCreate, db: Session = Depends(get_db)):
+@conditional_limit("5/minute")
+def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db)):
     # Check existing username
     existing_user = db.query(User).filter(User.username == user_in.username).first()
     if existing_user:
@@ -61,7 +65,8 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/sessions", response_model=TokenPair)
-def login(credentials: LoginRequest, db: Session = Depends(get_db)):
+@conditional_limit("10/minute")
+def login(request: Request, credentials: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == credentials.username).first()
     if not user or not verify_password(credentials.password, user.hashed_password):
         raise HTTPException(
@@ -76,8 +81,8 @@ def login(credentials: LoginRequest, db: Session = Depends(get_db)):
             detail="User account is inactive",
         )
 
-    access_token = create_access_token(user_id=user.id)
-    refresh_token = create_refresh_token(user_id=user.id)
+    access_token = create_access_token(user_id=user.id, role=user.role)
+    refresh_token = create_refresh_token(user_id=user.id, role=user.role)
 
     return TokenPair(access_token=access_token, refresh_token=refresh_token)
 
@@ -123,8 +128,9 @@ def logout(
 
 
 @router.post("/token-refreshes", response_model=TokenPair)
-def refresh(request: RefreshRequest, db: Session = Depends(get_db)):
-    payload = decode_token(request.refresh_token)
+@conditional_limit("10/minute")
+def refresh(request: Request, request_data: RefreshRequest, db: Session = Depends(get_db)):
+    payload = decode_token(request_data.refresh_token)
     if payload is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -168,8 +174,8 @@ def refresh(request: RefreshRequest, db: Session = Depends(get_db)):
     blacklist_entry = TokenBlacklist(token_jti=jti, expires_at=expires_at)
     db.add(blacklist_entry)
 
-    new_access_token = create_access_token(user_id=user.id)
-    new_refresh_token = create_refresh_token(user_id=user.id)
+    new_access_token = create_access_token(user_id=user.id, role=user.role)
+    new_refresh_token = create_refresh_token(user_id=user.id, role=user.role)
 
     db.commit()
 
@@ -181,8 +187,55 @@ def get_me(current_user: User = Depends(get_current_active_user)):
     return current_user
 
 
+@router.patch("/users/me", response_model=UserRead)
+def update_me(
+    user_update: UserUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    if user_update.username is not None and user_update.username != current_user.username:
+        existing = db.query(User).filter(User.username == user_update.username).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Username already taken",
+            )
+        current_user.username = user_update.username
+
+    if user_update.email is not None and user_update.email != current_user.email:
+        existing = db.query(User).filter(User.email == user_update.email).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email already registered",
+            )
+        current_user.email = user_update.email
+
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.post("/users/me/change-password", status_code=status.HTTP_200_OK)
+def change_password(
+    request_data: ChangePasswordRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    if not verify_password(request_data.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+    current_user.hashed_password = get_password_hash(request_data.new_password)
+    db.commit()
+    return {"detail": "Password updated successfully"}
+
+
 @router.post("/password-reset-requests", status_code=status.HTTP_200_OK)
-def request_password_reset(body: PasswordResetRequestCreate, db: Session = Depends(get_db)):
+@conditional_limit("3/minute")
+def request_password_reset(request: Request, body: PasswordResetRequestCreate, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == body.email).first()
     if user:
         plain_token = secrets.token_urlsafe(32)
@@ -202,7 +255,8 @@ def request_password_reset(body: PasswordResetRequestCreate, db: Session = Depen
 
 
 @router.post("/password-resets", status_code=status.HTTP_200_OK)
-def reset_password(body: PasswordResetConfirm, db: Session = Depends(get_db)):
+@conditional_limit("5/minute")
+def reset_password(request: Request, body: PasswordResetConfirm, db: Session = Depends(get_db)):
     token_hash = hashlib.sha256(body.token.encode()).hexdigest()
     reset_token = db.query(PasswordResetToken).filter(
         PasswordResetToken.token_hash == token_hash

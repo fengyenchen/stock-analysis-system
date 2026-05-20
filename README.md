@@ -20,7 +20,16 @@ A full-stack Taiwan stock market data platform with JWT authentication, real-tim
 - **Historical Prices** — view OHLCV historical data with date range filtering
 - **Watchlists** — create personal watchlists and track stock quotes
 - **Daily Sync** — automatic background sync of historical prices (configurable)
-- **Responsive UI** — modern SPA built with React and Tailwind CSS
+- **Portfolio Management** — track buy/sell transactions and view positions with P&L
+- **Price Alerts** — set target price alerts with real-time notifications
+- **Target Prices** — analyst target prices and ratings (admin-managed)
+- **Stock Fundamentals** — market cap, P/E, dividend yield, and key financial metrics
+- **Batch Summary** — enriched summaries for multiple stocks in a single request
+- **Real-time SSE** — Server-Sent Events streaming for live quote updates
+- **Content Visibility** — per-user toggles for UI components
+- **PWA Support** — installable progressive web app with offline assets
+- **Admin Dashboard** — role-based admin panel for user management and content visibility
+- **Responsive UI** — modern SPA built with React, Tailwind CSS, and Framer Motion animations
 
 ## Project Structure
 
@@ -38,13 +47,23 @@ A full-stack Taiwan stock market data platform with JWT authentication, real-tim
 │   ├── routers/
 │   │   ├── auth.py             # Authentication endpoints
 │   │   ├── stocks.py           # Stock data endpoints
-│   │   └── watchlists.py       # Watchlist endpoints
+│   │   ├── watchlists.py       # Watchlist endpoints
+│   │   ├── portfolio.py        # Portfolio transactions & positions
+│   │   ├── alerts.py           # Price alerts
+│   │   ├── target_prices.py    # Analyst target prices
+│   │   ├── admin.py            # Admin user management
+│   │   ├── content_visibility.py # UI component visibility settings
+│   │   └── events.py           # SSE real-time quote streams
 │   └── services/
-│       └── stock_data.py       # Taiwan stock data service
+│       ├── stock_data.py       # Taiwan stock data service
+│       ├── fundamentals.py     # Stock fundamental data
+│       ├── recommendations.py  # Stock analysis & recommendations
+│       └── summaries.py        # Batch stock summaries
 ├── frontend/                   # React frontend
 │   ├── src/
-│   │   ├── pages/              # Page components (Dashboard, Stocks, Watchlists, Auth, Password Reset)
-│   │   ├── components/         # Shared components
+│   │   ├── pages/              # Page components (Dashboard, Stocks, Watchlists, Auth, Portfolio, Alerts, Profile, Admin)
+│   │   ├── components/         # Shared components & stock-specific cards
+│   │   ├── hooks/              # Custom React hooks (PWA, haptics, SSE, search)
 │   │   ├── api/                # API clients
 │   │   ├── stores/             # Zustand state stores
 │   │   ├── types/              # TypeScript types
@@ -85,6 +104,20 @@ Run migrations:
 
 ```bash
 python3 -m alembic upgrade head
+```
+
+### CLI Commands
+
+```bash
+# Promote a user to admin
+python -m app.cli make-admin --username alice
+python -m app.cli make-admin --email alice@example.com
+
+# Sync stock list from twstock
+python -m app.cli sync-list
+
+# Backfill historical prices
+python -m app.cli backfill --days 365 --workers 4
 ```
 
 ### 2. Backend Setup
@@ -150,6 +183,28 @@ Common status codes:
 | POST | `/api/v1/token-refreshes` | Rotate a refresh token and get a new token pair |
 | POST | `/api/v1/password-reset-requests` | Request a password reset token |
 | POST | `/api/v1/password-resets` | Reset password using a valid token |
+| PATCH | `/api/v1/users/me` | Update current user profile |
+| POST | `/api/v1/users/me/change-password` | Change password (requires current password) |
+
+### Admin
+
+All admin endpoints require an authenticated user with `role: "admin"`.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/admin/users` | List all users (paginated) |
+| GET | `/api/v1/admin/users/{id}` | Get user details |
+| PATCH | `/api/v1/admin/users/{id}` | Update user role or active status |
+| DELETE | `/api/v1/admin/users/{id}` | Delete a user |
+
+Target price creation (`POST /api/v1/stocks/{symbol}/target-prices`) is also admin-only.
+
+### Content Visibility (Admin)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/admin/content-visibility` | List global content visibility settings |
+| PATCH | `/api/v1/admin/content-visibility/{key}` | Update visibility for a content key |
 
 ### Stocks
 
@@ -160,8 +215,13 @@ Common status codes:
 | GET | `/api/v1/stocks/{symbol}/quotes/latest` | Get latest quote |
 | GET | `/api/v1/stocks/{symbol}/prices` | Get historical prices |
 | GET | `/api/v1/stocks/{symbol}/sync-status` | Get historical price sync status |
+| GET | `/api/v1/stocks/{symbol}/peers` | Get peer stocks in the same industry |
+| GET | `/api/v1/stocks/{symbol}/target-prices` | Get analyst target prices |
+| GET | `/api/v1/stocks/batch/summary` | Get enriched summaries for multiple stocks |
 | POST | `/api/v1/stock-sync-jobs` | Create a historical price sync job (auth required) |
 | GET | `/api/v1/stock-sync-jobs/{id}` | Get a historical price sync job (auth required) |
+
+> **Note:** Historical prices support JSON (default) and CSV export via `?format=csv`.
 
 All `GET /api/v1/stocks*` endpoints are publicly accessible without authentication.
 
@@ -178,6 +238,35 @@ All `GET /api/v1/stocks*` endpoints are publicly accessible without authenticati
 | DELETE | `/api/v1/watchlists/{id}/items/{symbol}` | Remove stock from watchlist |
 | GET | `/api/v1/watchlists/{id}/quotes` | Get quotes for watchlist stocks |
 
+### Portfolio
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/portfolio/transactions` | Record a buy or sell transaction |
+| GET | `/api/v1/portfolio/positions` | List all positions with P&L |
+| GET | `/api/v1/portfolio/positions/{symbol}` | Get position for a specific stock |
+
+### Price Alerts
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/price-alerts` | List price alerts (optionally `?active_only=true`) |
+| POST | `/api/v1/price-alerts` | Create a price alert |
+| PATCH | `/api/v1/price-alerts/{id}` | Update an alert (e.g. toggle active) |
+| DELETE | `/api/v1/price-alerts/{id}` | Delete a price alert |
+
+### Events (SSE)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/events/quotes?symbols=2330,2317` | Stream real-time quotes via Server-Sent Events |
+
+### Content Visibility
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/content-visibility` | Get effective visibility for current user |
+
 ## Testing
 
 Run the backend test suite:
@@ -186,7 +275,7 @@ Run the backend test suite:
 python3 -m pytest tests/ -v
 ```
 
-The project includes 125+ tests covering authentication, security, stocks, watchlists, and schema validation.
+The project includes 275+ tests covering authentication, security, admin access, stocks, watchlists, target prices, and schema validation.
 
 ## Docker
 
@@ -211,6 +300,8 @@ All configuration is managed through environment variables in `.env`:
 | `STOCK_DAILY_SYNC_ENABLED` | true | Enable daily price sync |
 | `STOCK_DAILY_SYNC_HOUR` | 16 | Daily sync hour (24h) |
 | `STOCK_DAILY_SYNC_MINUTE` | 30 | Daily sync minute |
+| `STOCK_SYNC_MAX_CONCURRENT` | 8 | Max concurrent workers for sync fallback |
+| `STOCK_SYNC_RATE_LIMIT_SECONDS` | 0.3 | Delay between fallback sync requests |
 
 Frontend builds use these Vite variables:
 
@@ -230,6 +321,8 @@ Frontend builds use these Vite variables:
 - python-jose + bcrypt
 - APScheduler
 - twstock
+- yfinance
+- slowapi (rate limiting)
 
 **Frontend**
 - React 19

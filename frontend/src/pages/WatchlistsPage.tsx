@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { listWatchlists, createWatchlist, deleteWatchlist } from "@/api/watchlists";
+import { getApiErrorMessage } from "@/api/client";
 import { toast } from "sonner";
 import { Plus, Trash2, List, ChevronRight } from "lucide-react";
 
@@ -23,8 +24,8 @@ export function WatchlistsPage() {
       setIsCreating(false);
       queryClient.invalidateQueries({ queryKey: ["watchlists"] });
     },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.detail || "Failed to create");
+    onError: (err: unknown) => {
+      toast.error(getApiErrorMessage(err, "Failed to create"));
     },
   });
 
@@ -34,8 +35,8 @@ export function WatchlistsPage() {
       toast.success("Watchlist deleted");
       queryClient.invalidateQueries({ queryKey: ["watchlists"] });
     },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.detail || "Failed to delete");
+    onError: (err: unknown) => {
+      toast.error(getApiErrorMessage(err, "Failed to delete"));
     },
   });
 
@@ -46,7 +47,7 @@ export function WatchlistsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-4 md:px-0 py-4 md:py-0">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-primary">Watchlists</h1>
         <button
@@ -54,12 +55,13 @@ export function WatchlistsPage() {
           className="flex items-center gap-2 px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors"
         >
           <Plus className="w-4 h-4" />
-          New Watchlist
+          <span className="hidden sm:inline">New Watchlist</span>
+          <span className="sm:hidden">New</span>
         </button>
       </div>
 
       {isCreating && (
-        <form onSubmit={handleCreate} className="bg-card border border-border rounded-xl p-4 flex items-center gap-3">
+        <form onSubmit={handleCreate} className="bg-card border border-border rounded-xl p-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
           <input
             type="text"
             placeholder="Watchlist name"
@@ -68,20 +70,22 @@ export function WatchlistsPage() {
             className="flex-1 px-3 py-2 rounded-lg border border-border bg-muted focus:outline-none focus:ring-2 focus:ring-accent"
             autoFocus
           />
-          <button
-            type="submit"
-            disabled={createMutation.isPending}
-            className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors disabled:opacity-50"
-          >
-            Create
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsCreating(false)}
-            className="px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted transition-colors"
-          >
-            Cancel
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={createMutation.isPending}
+              className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors disabled:opacity-50"
+            >
+              Create
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsCreating(false)}
+              className="px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
         </form>
       )}
 
@@ -104,11 +108,11 @@ export function WatchlistsPage() {
           {data.map((wl) => (
             <div
               key={wl.id}
-              className="bg-card border border-border rounded-xl p-5 hover:shadow-md transition-shadow"
+              className="bg-card border border-border rounded-xl p-4 md:p-5 hover:shadow-md transition-shadow"
             >
               <div className="flex items-start justify-between">
-                <Link to={`/watchlists/${wl.id}`} className="flex-1">
-                  <h3 className="text-lg font-semibold text-primary hover:text-accent transition-colors">
+                <Link to={`/watchlists/${wl.id}`} className="flex-1 min-w-0">
+                  <h3 className="text-lg font-semibold text-primary hover:text-accent transition-colors truncate">
                     {wl.name}
                   </h3>
                   <p className="text-sm text-muted-foreground mt-1">
