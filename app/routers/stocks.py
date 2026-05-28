@@ -11,6 +11,7 @@ from app.database import get_db
 from app.dependencies import get_current_active_user
 from app.models import Stock, StockPrice, StockSyncJob, StockSyncStatus, User
 from app.schemas import (
+    AIAnalysisResponse,
     StockFundamentalRead,
     StockProfileRead,
     StockQuoteRead,
@@ -24,9 +25,7 @@ from app.schemas import (
 from app.services.fundamentals import get_stock_fundamentals
 from app.services.recommendations import get_stock_recommendation
 from app.services.stock_data import async_get_realtime_quote, sync_historical_prices
-from app.services.summaries import get_stock_summaries
-from app.services.summaries import generate_deepseek_analysis
-from app.schemas import AIAnalysisResponse
+from app.services.summaries import generate_deepseek_analysis, get_stock_summaries
 
 router = APIRouter(prefix="/stocks", tags=["Stocks"])
 sync_jobs_router = APIRouter(prefix="/stock-sync-jobs", tags=["Stock Sync Jobs"])
@@ -388,7 +387,7 @@ def get_stock_ai_analysis(
         )
 
     fundamental = get_stock_fundamentals(db, stock)
-    
+
     try:
         rec = get_stock_recommendation(db, stock)
         system_action = rec.recommendation

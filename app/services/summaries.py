@@ -1,17 +1,15 @@
+import json
+import uuid
 from decimal import Decimal
 from typing import List
 
+from openai import OpenAI
 from sqlalchemy.orm import Session
 
-from app.models import Stock, StockPrice
-from app.schemas import StockSummaryRead
-from app.services.recommendations import get_stock_recommendation
-
-import json
-import uuid
-from openai import OpenAI
 from app.config import settings
-from app.schemas import AIAnalysisResponse
+from app.models import Stock, StockPrice
+from app.schemas import AIAnalysisResponse, StockSummaryRead
+from app.services.recommendations import get_stock_recommendation
 
 
 def get_stock_summaries(db: Session, symbols: List[str]) -> List[StockSummaryRead]:
@@ -95,12 +93,12 @@ def generate_deepseek_analysis(stock_code: str, company_name: str, context_data:
     context_str = json.dumps(context_data, indent=2)
 
     system_prompt = """
-    You are a professional quantitative and qualitative stock market analyst. 
+    You are a professional quantitative and qualitative stock market analyst.
     You must output your analysis STRICTLY IN ENGLISH.
     You must ONLY output the result in the following JSON format. Do not include any Markdown tags (like ```json) or extra text:
     {
       "request_id": "the provided request_id",
-      "action": 1, 
+      "action": 1,
       "summary": { "short_sentence": "...", "long_sentence": "..." },
       "reasons": { "technical": "...", "fundamental": "...", "comprehensive": "..." }
     }
@@ -111,7 +109,7 @@ def generate_deepseek_analysis(stock_code: str, company_name: str, context_data:
     Please analyze the stock: [{stock_code} {company_name}].
     Here is the system-calculated data and recent news context:
     {context_str}
-    
+
     Remember: Respond purely in JSON format, in English, and keep each reason under 50 words.
     """
 
@@ -127,11 +125,11 @@ def generate_deepseek_analysis(stock_code: str, company_name: str, context_data:
         )
 
         raw_output = response.choices[0].message.content.strip()
-        
+
         # 防呆機制
         if raw_output.startswith("```"):
             raw_output = raw_output.strip("`").removeprefix("json").strip()
-            
+
         result_dict = json.loads(raw_output)
         return AIAnalysisResponse(**result_dict)
 
