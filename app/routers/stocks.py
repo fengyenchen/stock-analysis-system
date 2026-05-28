@@ -25,6 +25,8 @@ from app.services.fundamentals import get_stock_fundamentals
 from app.services.recommendations import get_stock_recommendation
 from app.services.stock_data import async_get_realtime_quote, sync_historical_prices
 from app.services.summaries import get_stock_summaries
+from app.services.summaries import generate_deepseek_analysis
+from app.schemas import AIAnalysisResponse
 
 router = APIRouter(prefix="/stocks", tags=["Stocks"])
 sync_jobs_router = APIRouter(prefix="/stock-sync-jobs", tags=["Stock Sync Jobs"])
@@ -369,3 +371,48 @@ def get_stock_profile(
         dividend_yield=fundamental.dividend_yield if fundamental else None,
         market_cap=fundamental.market_cap if fundamental else None,
     )
+
+@router.get("/{symbol}/ai-analysis", response_model=AIAnalysisResponse)
+def get_stock_ai_analysis(
+    symbol: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Get AI-generated analysis and summary for a stock using DeepSeek.
+    """
+    stock = db.query(Stock).filter(Stock.symbol == symbol, Stock.is_active == True).first()
+    if not stock:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Stock {symbol} not found",
+        )
+
+    fundamental = get_stock_fundamentals(db, stock)
+    
+    try:
+        rec = get_stock_recommendation(db, stock)
+        system_action = rec.recommendation
+    except Exception:
+        system_action = None
+
+    context_data = {
+        "industry": stock.industry,
+        "pe_ratio": fundamental.pe_ratio if fundamental else None,
+        "dividend_yield": fundamental.dividend_yield if fundamental else None,
+        "market_cap": fundamental.market_cap if fundamental else None,
+        "system_quantitative_action": system_action,
+    }
+
+    analysis_result = generate_deepseek_analysis(
+        stock_code=stock.symbol,
+        company_name=stock.name,
+        context_data=context_data
+    )
+
+    if not analysis_result:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="系統繁忙，暫時無法產生 AI 分析"
+        )
+
+    return analysis_result

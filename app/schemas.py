@@ -444,3 +444,18 @@ class ContentVisibilityUpdate(BaseModel):
 class ContentVisibilityEffectiveRead(BaseModel):
     content_key: str
     is_visible: bool
+
+class AIAnalysisSummary(BaseModel):
+    short_sentence: str = Field(..., description="短句總結")
+    long_sentence: str = Field(..., description="長句詳細說明")
+
+class AIAnalysisReasons(BaseModel):
+    technical: str = Field(..., description="技術面理由")
+    fundamental: str = Field(..., description="基本面理由")
+    comprehensive: str = Field(..., description="綜合理由")
+
+class AIAnalysisResponse(BaseModel):
+    request_id: str
+    action: int = Field(..., description="1代表買入, 0代表觀望, -1代表賣出")
+    summary: AIAnalysisSummary
+    reasons: AIAnalysisReasons

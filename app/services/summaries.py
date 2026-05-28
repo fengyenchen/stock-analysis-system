@@ -7,6 +7,12 @@ from app.models import Stock, StockPrice
 from app.schemas import StockSummaryRead
 from app.services.recommendations import get_stock_recommendation
 
+import json
+import uuid
+from openai import OpenAI
+from app.config import settings
+from app.schemas import AIAnalysisResponse
+
 
 def get_stock_summaries(db: Session, symbols: List[str]) -> List[StockSummaryRead]:
     """Return enriched summaries for a batch of stock symbols.
@@ -77,3 +83,58 @@ def get_stock_summaries(db: Session, symbols: List[str]) -> List[StockSummaryRea
         )
 
     return result
+
+
+client = OpenAI(
+    api_key=settings.DEEPSEEK_API_KEY,
+    base_url="https://api.deepseek.com"
+)
+
+def generate_deepseek_analysis(stock_code: str, company_name: str, context_data: dict) -> AIAnalysisResponse | None:
+    req_id = str(uuid.uuid4())
+    context_str = json.dumps(context_data, indent=2)
+
+    system_prompt = """
+    You are a professional quantitative and qualitative stock market analyst. 
+    You must output your analysis STRICTLY IN ENGLISH.
+    You must ONLY output the result in the following JSON format. Do not include any Markdown tags (like ```json) or extra text:
+    {
+      "request_id": "the provided request_id",
+      "action": 1, 
+      "summary": { "short_sentence": "...", "long_sentence": "..." },
+      "reasons": { "technical": "...", "fundamental": "...", "comprehensive": "..." }
+    }
+    """
+
+    user_prompt = f"""
+    Request ID: {req_id}
+    Please analyze the stock: [{stock_code} {company_name}].
+    Here is the system-calculated data and recent news context:
+    {context_str}
+    
+    Remember: Respond purely in JSON format, in English, and keep each reason under 50 words.
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=800
+        )
+
+        raw_output = response.choices[0].message.content.strip()
+        
+        # 防呆機制
+        if raw_output.startswith("```"):
+            raw_output = raw_output.strip("`").removeprefix("json").strip()
+            
+        result_dict = json.loads(raw_output)
+        return AIAnalysisResponse(**result_dict)
+
+    except Exception as e:
+        print(f"DeepSeek 分析生成失敗: {e}")
+        return None
