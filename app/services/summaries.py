@@ -84,7 +84,7 @@ def get_stock_summaries(db: Session, symbols: List[str]) -> List[StockSummaryRea
 
 
 client = OpenAI(
-    api_key=settings.DEEPSEEK_API_KEY,
+    api_key=settings.DEEPSEEK_API_KEY or "dummy_key_for_testing", 
     base_url="https://api.deepseek.com"
 )
 
