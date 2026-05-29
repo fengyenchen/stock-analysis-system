@@ -9,6 +9,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    Text,
     UniqueConstraint,
     func,
 )
@@ -73,6 +74,7 @@ class Stock(Base):
     prices = relationship("StockPrice", back_populates="stock", cascade="all, delete-orphan")
     sync_status = relationship("StockSyncStatus", back_populates="stock", uselist=False, cascade="all, delete-orphan")
     sync_jobs = relationship("StockSyncJob", back_populates="stock", cascade="all, delete-orphan")
+    ai_analysis_jobs = relationship("AIAnalysisJob", back_populates="stock", cascade="all, delete-orphan")
     watchlist_items = relationship("WatchlistItem", back_populates="stock", cascade="all, delete-orphan")
     target_prices = relationship("StockTargetPrice", back_populates="stock", cascade="all, delete-orphan")
     fundamental = relationship("StockFundamental", back_populates="stock", uselist=False, cascade="all, delete-orphan")
@@ -139,6 +141,28 @@ class StockSyncJob(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     stock = relationship("Stock", back_populates="sync_jobs")
+
+
+class AIAnalysisJob(Base):
+    __tablename__ = "ai_analysis_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    status = Column(String(20), default="pending", nullable=False)
+    result_json = Column(Text, nullable=True)
+    last_error = Column(String(500), nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    stock = relationship("Stock", back_populates="ai_analysis_jobs")
+    user = relationship("User")
+
+    __table_args__ = (
+        Index("ix_ai_analysis_jobs_stock_status_created", "stock_id", "status", "created_at"),
+    )
 
 
 class Watchlist(Base):

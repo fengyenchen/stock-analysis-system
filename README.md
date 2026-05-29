@@ -277,6 +277,31 @@ python3 -m pytest tests/ -v
 
 The project includes 275+ tests covering authentication, security, admin access, stocks, watchlists, target prices, and schema validation.
 
+## PR Review Cleanup
+
+After blocker-fix commits land on a pull request, maintainers should clean up stale review state before merging. PR #12 is the motivating example: the requested changes were fixed in later commits and CI passed, but older review state still needed explicit cleanup. Use this workflow for any PR with similar stale review threads.
+
+### Classify Review Threads
+
+Treat a review thread as outdated when it is anchored to code that no longer exists, the exact requested change is covered by a later commit, and the current diff plus tests demonstrate the fix. A thread is still actionable when the same behavior is still present, the comment asks for a decision that has not been made, the test coverage is still missing, or the reviewer explicitly asked for follow-up evidence that has not been provided.
+
+When in doubt, leave the thread open and reply with the commit, test, or rationale that appears to address it. Do not resolve a thread only because CI is green; CI confirms checks, not reviewer intent.
+
+### Who Cleans Up
+
+The PR author should push the blocker-fix commits and summarize which review items were addressed. The maintainer who owns the review should resolve outdated inline threads, dismiss their own stale `CHANGES_REQUESTED` review when its blockers are fixed, or request a new review if the change set has materially shifted. Other maintainers should avoid dismissing another maintainer's review unless they own repository review policy and the fix evidence is clear.
+
+Automated review comments can be resolved when they are outdated and covered by the current diff. Human comments that involve product, security, or architecture judgment should stay open until the reviewer or repo maintainer confirms the resolution.
+
+### Merge Readiness Checklist
+
+- Current branch is pushed and the PR head SHA matches the intended local commit.
+- Required CI checks are complete and passing.
+- GitHub reports the PR as mergeable and the merge state is clean.
+- Review decision is not `CHANGES_REQUESTED`; stale requested-change reviews have been dismissed with a short reason.
+- Unresolved review threads are either resolved as outdated/fixed or intentionally left open with a written explanation.
+- Follow-up work that is not required for this merge is tracked in separate issues.
+
 ## Docker
 
 Build and run with Docker:
@@ -302,6 +327,25 @@ All configuration is managed through environment variables in `.env`:
 | `STOCK_DAILY_SYNC_MINUTE` | 30 | Daily sync minute |
 | `STOCK_SYNC_MAX_CONCURRENT` | 8 | Max concurrent workers for sync fallback |
 | `STOCK_SYNC_RATE_LIMIT_SECONDS` | 0.3 | Delay between fallback sync requests |
+| `AI_ANALYSIS_CACHE_TTL_SECONDS` | 300 | Short-term AI analysis cache TTL; set to 0 to disable |
+| `AI_ANALYSIS_PROVIDER_TIMEOUT_SECONDS` | 20.0 | DeepSeek provider call timeout per background job |
+| `AI_ANALYSIS_MAX_CONCURRENT_JOBS` | 2 | Max AI analysis provider jobs running at once |
+| `AI_ANALYSIS_MAX_QUEUED_JOBS` | 20 | Max AI analysis provider jobs waiting to run |
+| `AI_ANALYSIS_CIRCUIT_FAILURE_THRESHOLD` | 3 | Consecutive provider failures before opening the circuit |
+| `AI_ANALYSIS_CIRCUIT_COOLDOWN_SECONDS` | 60 | Seconds to reject new provider work after the circuit opens |
+| `AI_ANALYSIS_JOB_STALE_SECONDS` | 300 | Seconds before an unfinished AI analysis job is expired after interruption |
+
+## AI Analysis Health Signals
+
+AI analysis emits structured log fields for degraded context and provider health. Monitor the `event` field and alert on repeated warnings:
+
+| Event | Level | Key fields | Meaning |
+|-------|-------|------------|---------|
+| `ai_analysis.context_degraded` | warning | `symbol`, `failure_category` | Analysis was queued without complete fundamentals context. Categories are `fundamentals_unavailable` and `fundamentals_exception`. |
+| `ai_analysis.provider_failure` | warning | `symbol`, `provider`, `failure_category`, `request_id` when available | DeepSeek analysis did not produce a valid response. Categories are `missing_api_key`, `timeout`, `invalid_json`, `invalid_action`, `request_id_mismatch`, `provider_exception`, and `empty_response`. |
+| `ai_analysis.provider_success` | info | `symbol`, `provider`, `request_id`, `action` | DeepSeek returned a validated AI analysis. |
+
+These logs intentionally omit API keys, full prompts, and full provider responses.
 
 Frontend builds use these Vite variables:
 

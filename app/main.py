@@ -24,6 +24,7 @@ from app.routers import (
     watchlists,
 )
 from app.scheduler import start_scheduler, stop_scheduler
+from app.services.ai_analysis_jobs import ai_analysis_job_service
 
 API_V1_PREFIX = "/api/v1"
 
@@ -34,6 +35,7 @@ async def lifespan(app: FastAPI):
         start_scheduler()
     yield
     stop_scheduler()
+    ai_analysis_job_service.shutdown()
 
 
 app = FastAPI(

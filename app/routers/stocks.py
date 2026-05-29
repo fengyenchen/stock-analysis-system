@@ -1,16 +1,21 @@
 import csv
 import io
+import logging
 from datetime import date, datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_active_user
-from app.models import Stock, StockPrice, StockSyncJob, StockSyncStatus, User
+from app.limiter import conditional_limit, get_authenticated_subject_or_address
+from app.models import AIAnalysisJob, Stock, StockPrice, StockSyncJob, StockSyncStatus, User
 from app.schemas import (
+    AIAnalysisJobRead,
+    AIAnalysisResponse,
     StockFundamentalRead,
     StockProfileRead,
     StockQuoteRead,
@@ -21,6 +26,12 @@ from app.schemas import (
     StockSyncJobRead,
     StockSyncStatusRead,
 )
+from app.services.ai_analysis_cache import ai_analysis_cache
+from app.services.ai_analysis_jobs import (
+    AI_ANALYSIS_BUSY_DETAIL,
+    AIAnalysisProviderUnavailable,
+    ai_analysis_job_service,
+)
 from app.services.fundamentals import get_stock_fundamentals
 from app.services.recommendations import get_stock_recommendation
 from app.services.stock_data import async_get_realtime_quote, sync_historical_prices
@@ -28,6 +39,7 @@ from app.services.summaries import get_stock_summaries
 
 router = APIRouter(prefix="/stocks", tags=["Stocks"])
 sync_jobs_router = APIRouter(prefix="/stock-sync-jobs", tags=["Stock Sync Jobs"])
+logger = logging.getLogger(__name__)
 
 
 def _read_stock_sync_job(job: StockSyncJob) -> StockSyncJobRead:
@@ -48,9 +60,31 @@ def _read_stock_sync_job(job: StockSyncJob) -> StockSyncJobRead:
     )
 
 
+def _read_ai_analysis_job(job: AIAnalysisJob) -> AIAnalysisJobRead:
+    result = None
+    if job.result_json:
+        try:
+            result = AIAnalysisResponse.model_validate_json(job.result_json)
+        except Exception:
+            result = None
+
+    return AIAnalysisJobRead(
+        id=job.id,
+        symbol=job.stock.symbol,
+        status=job.status,
+        result=result,
+        error=AI_ANALYSIS_BUSY_DETAIL if job.status == "failed" else None,
+        created_at=job.created_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+    )
+
+
 @router.get("", response_model=List[StockRead])
 def list_stocks(
-    q: Optional[str] = Query(None, min_length=1, description="Optional search query for stock name or symbol"),
+    q: Optional[str] = Query(
+        None, min_length=1, description="Optional search query for stock name or symbol"
+    ),
     offset: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
@@ -152,15 +186,17 @@ def get_stock_history(
         writer = csv.writer(output)
         writer.writerow(["date", "open", "high", "low", "close", "volume", "change"])
         for p in prices:
-            writer.writerow([
-                p.date.isoformat(),
-                p.open_price,
-                p.high_price,
-                p.low_price,
-                p.close_price,
-                p.volume,
-                p.change,
-            ])
+            writer.writerow(
+                [
+                    p.date.isoformat(),
+                    p.open_price,
+                    p.high_price,
+                    p.low_price,
+                    p.close_price,
+                    p.volume,
+                    p.change,
+                ]
+            )
         output.seek(0)
         return StreamingResponse(
             output,
@@ -369,3 +405,120 @@ def get_stock_profile(
         dividend_yield=fundamental.dividend_yield if fundamental else None,
         market_cap=fundamental.market_cap if fundamental else None,
     )
+
+
+@router.get(
+    "/{symbol}/ai-analysis",
+    response_model=AIAnalysisResponse | AIAnalysisJobRead,
+    responses={
+        202: {"model": AIAnalysisJobRead, "description": "AI analysis job accepted or running"},
+        503: {"description": "AI provider unavailable"},
+    },
+)
+@conditional_limit("5/minute", key_func=get_authenticated_subject_or_address)
+def get_stock_ai_analysis(
+    request: Request,
+    response: Response,
+    symbol: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Get AI-generated analysis and summary for a stock using DeepSeek.
+    """
+    stock = db.query(Stock).filter(Stock.symbol == symbol, Stock.is_active == True).first()
+    if not stock:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Stock {symbol} not found",
+        )
+
+    cached_analysis = ai_analysis_cache.get(stock.symbol)
+    if cached_analysis:
+        return cached_analysis
+
+    if not settings.DEEPSEEK_API_KEY:
+        logger.warning(
+            "AI analysis provider failure",
+            extra={
+                "event": "ai_analysis.provider_failure",
+                "symbol": stock.symbol,
+                "provider": "deepseek",
+                "failure_category": "missing_api_key",
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=AI_ANALYSIS_BUSY_DETAIL,
+        )
+
+    recent_analysis = ai_analysis_job_service.get_recent_success(db, stock)
+    if recent_analysis:
+        return recent_analysis
+
+    active_job = ai_analysis_job_service.get_active_job(db, stock)
+    if active_job:
+        response.status_code = status.HTTP_202_ACCEPTED
+        response.headers["Location"] = request.url.path
+        return _read_ai_analysis_job(active_job)
+
+    if ai_analysis_job_service.has_recent_failure(db, stock):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=AI_ANALYSIS_BUSY_DETAIL,
+        )
+
+    try:
+        fundamental = get_stock_fundamentals(db, stock)
+    except Exception as exc:
+        logger.warning(
+            "AI analysis context degraded",
+            extra={
+                "event": "ai_analysis.context_degraded",
+                "symbol": stock.symbol,
+                "failure_category": "fundamentals_exception",
+                "exception_type": exc.__class__.__name__,
+            },
+        )
+        fundamental = None
+    else:
+        if fundamental is None:
+            logger.warning(
+                "AI analysis context degraded",
+                extra={
+                    "event": "ai_analysis.context_degraded",
+                    "symbol": stock.symbol,
+                    "failure_category": "fundamentals_unavailable",
+                },
+            )
+
+    try:
+        rec = get_stock_recommendation(db, stock)
+        system_action = rec.recommendation
+    except Exception:
+        system_action = None
+
+    context_data = {
+        "industry": stock.industry,
+        "pe_ratio": fundamental.pe_ratio if fundamental else None,
+        "dividend_yield": fundamental.dividend_yield if fundamental else None,
+        "market_cap": fundamental.market_cap if fundamental else None,
+        "system_quantitative_action": system_action,
+    }
+
+    try:
+        job = ai_analysis_job_service.enqueue(
+            db,
+            stock=stock,
+            user_id=current_user.id,
+            context_data=context_data,
+        )
+    except AIAnalysisProviderUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=AI_ANALYSIS_BUSY_DETAIL,
+        )
+
+    response.status_code = status.HTTP_202_ACCEPTED
+    response.headers["Location"] = request.url.path
+    return _read_ai_analysis_job(job)
