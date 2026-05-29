@@ -456,6 +456,6 @@ class AIAnalysisReasons(BaseModel):
 
 class AIAnalysisResponse(BaseModel):
     request_id: str
-    action: int = Field(..., description="1代表買入, 0代表觀望, -1代表賣出")
+    action: Literal[-1, 0, 1] = Field(..., description="1代表買入, 0代表觀望, -1代表賣出")
     summary: AIAnalysisSummary
     reasons: AIAnalysisReasons

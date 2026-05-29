@@ -1,8 +1,10 @@
 import json
+import logging
 import uuid
 from decimal import Decimal
 from typing import List
 
+from fastapi.encoders import jsonable_encoder
 from openai import OpenAI
 from sqlalchemy.orm import Session
 
@@ -11,6 +13,7 @@ from app.models import Stock, StockPrice
 from app.schemas import AIAnalysisResponse, StockSummaryRead
 from app.services.recommendations import get_stock_recommendation
 
+logger = logging.getLogger(__name__)
 
 def get_stock_summaries(db: Session, symbols: List[str]) -> List[StockSummaryRead]:
     """Return enriched summaries for a batch of stock symbols.
@@ -83,14 +86,12 @@ def get_stock_summaries(db: Session, symbols: List[str]) -> List[StockSummaryRea
     return result
 
 
-client = OpenAI(
-    api_key=settings.DEEPSEEK_API_KEY or "dummy_key_for_testing",
-    base_url="https://api.deepseek.com"
-)
-
 def generate_deepseek_analysis(stock_code: str, company_name: str, context_data: dict) -> AIAnalysisResponse | None:
+    if not settings.DEEPSEEK_API_KEY:
+        logger.warning("DeepSeek API key is not configured")
+        return None
+
     req_id = str(uuid.uuid4())
-    context_str = json.dumps(context_data, indent=2)
 
     system_prompt = """
     You are a professional quantitative and qualitative stock market analyst.
@@ -104,16 +105,23 @@ def generate_deepseek_analysis(stock_code: str, company_name: str, context_data:
     }
     """
 
-    user_prompt = f"""
-    Request ID: {req_id}
-    Please analyze the stock: [{stock_code} {company_name}].
-    Here is the system-calculated data and recent news context:
-    {context_str}
-
-    Remember: Respond purely in JSON format, in English, and keep each reason under 50 words.
-    """
-
     try:
+        context_str = json.dumps(jsonable_encoder(context_data), indent=2)
+        user_prompt = f"""
+        Request ID: {req_id}
+        Please analyze the stock: [{stock_code} {company_name}].
+        Here is the system-calculated data and recent news context:
+        {context_str}
+
+        Remember: Respond purely in JSON format, in English, and keep each reason under 50 words.
+        """
+
+        client = OpenAI(
+            api_key=settings.DEEPSEEK_API_KEY,
+            base_url="https://api.deepseek.com",
+            timeout=20.0,
+            max_retries=0,
+        )
         response = client.chat.completions.create(
             model="deepseek-chat",
             messages=[
@@ -124,15 +132,21 @@ def generate_deepseek_analysis(stock_code: str, company_name: str, context_data:
             max_tokens=800
         )
 
-        raw_output = response.choices[0].message.content.strip()
+        raw_output = response.choices[0].message.content if response.choices else None
+        if not raw_output:
+            return None
+        raw_output = raw_output.strip()
 
-        # 防呆機制
         if raw_output.startswith("```"):
             raw_output = raw_output.strip("`").removeprefix("json").strip()
 
         result_dict = json.loads(raw_output)
-        return AIAnalysisResponse(**result_dict)
+        result = AIAnalysisResponse(**result_dict)
+        if result.request_id != req_id:
+            logger.warning("DeepSeek response request_id mismatch")
+            return None
+        return result
 
     except Exception as e:
-        print(f"DeepSeek 分析生成失敗: {e}")
+        logger.warning("DeepSeek analysis generation failed: %s", e)
         return None

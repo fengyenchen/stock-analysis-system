@@ -3,12 +3,13 @@ import io
 from datetime import date, datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import get_current_active_user
+from app.limiter import conditional_limit, get_authenticated_subject_or_address
 from app.models import Stock, StockPrice, StockSyncJob, StockSyncStatus, User
 from app.schemas import (
     AIAnalysisResponse,
@@ -372,9 +373,12 @@ def get_stock_profile(
     )
 
 @router.get("/{symbol}/ai-analysis", response_model=AIAnalysisResponse)
+@conditional_limit("5/minute", key_func=get_authenticated_subject_or_address)
 def get_stock_ai_analysis(
+    request: Request,
     symbol: str,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Get AI-generated analysis and summary for a stock using DeepSeek.
@@ -386,7 +390,10 @@ def get_stock_ai_analysis(
             detail=f"Stock {symbol} not found",
         )
 
-    fundamental = get_stock_fundamentals(db, stock)
+    try:
+        fundamental = get_stock_fundamentals(db, stock)
+    except Exception:
+        fundamental = None
 
     try:
         rec = get_stock_recommendation(db, stock)
