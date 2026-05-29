@@ -277,6 +277,31 @@ python3 -m pytest tests/ -v
 
 The project includes 275+ tests covering authentication, security, admin access, stocks, watchlists, target prices, and schema validation.
 
+## PR Review Cleanup
+
+After blocker-fix commits land on a pull request, maintainers should clean up stale review state before merging. PR #12 is the motivating example: the requested changes were fixed in later commits and CI passed, but older review state still needed explicit cleanup. Use this workflow for any PR with similar stale review threads.
+
+### Classify Review Threads
+
+Treat a review thread as outdated when it is anchored to code that no longer exists, the exact requested change is covered by a later commit, and the current diff plus tests demonstrate the fix. A thread is still actionable when the same behavior is still present, the comment asks for a decision that has not been made, the test coverage is still missing, or the reviewer explicitly asked for follow-up evidence that has not been provided.
+
+When in doubt, leave the thread open and reply with the commit, test, or rationale that appears to address it. Do not resolve a thread only because CI is green; CI confirms checks, not reviewer intent.
+
+### Who Cleans Up
+
+The PR author should push the blocker-fix commits and summarize which review items were addressed. The maintainer who owns the review should resolve outdated inline threads, dismiss their own stale `CHANGES_REQUESTED` review when its blockers are fixed, or request a new review if the change set has materially shifted. Other maintainers should avoid dismissing another maintainer's review unless they own repository review policy and the fix evidence is clear.
+
+Automated review comments can be resolved when they are outdated and covered by the current diff. Human comments that involve product, security, or architecture judgment should stay open until the reviewer or repo maintainer confirms the resolution.
+
+### Merge Readiness Checklist
+
+- Current branch is pushed and the PR head SHA matches the intended local commit.
+- Required CI checks are complete and passing.
+- GitHub reports the PR as mergeable and the merge state is clean.
+- Review decision is not `CHANGES_REQUESTED`; stale requested-change reviews have been dismissed with a short reason.
+- Unresolved review threads are either resolved as outdated/fixed or intentionally left open with a written explanation.
+- Follow-up work that is not required for this merge is tracked in separate issues.
+
 ## Docker
 
 Build and run with Docker:
