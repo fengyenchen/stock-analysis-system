@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
@@ -9,6 +10,10 @@ from app.schemas import AIAnalysisResponse
 from app.services import summaries
 from app.services.ai_analysis_cache import AIAnalysisCache
 from app.services.ai_analysis_jobs import AIAnalysisProviderUnavailable
+
+
+def _records_for(caplog, event: str):
+    return [record for record in caplog.records if getattr(record, "event", None) == event]
 
 
 class _FakeClock:
@@ -79,15 +84,32 @@ def _patch_deepseek_client(monkeypatch, content: str, captured: dict):
 
 
 def _patch_failing_deepseek_client(monkeypatch):
+    _patch_raising_deepseek_client(monkeypatch, RuntimeError("provider unavailable"))
+
+
+def _patch_raising_deepseek_client(monkeypatch, exc: Exception):
     class FakeCompletions:
         def create(self, **kwargs):
-            raise RuntimeError("provider unavailable")
+            raise exc
 
     class FakeOpenAI:
         def __init__(self, **kwargs):
             self.chat = SimpleNamespace(completions=FakeCompletions())
 
     monkeypatch.setattr(summaries, "OpenAI", FakeOpenAI)
+
+
+def _provider_failure_record(caplog, failure_category: str):
+    records = [
+        record
+        for record in _records_for(caplog, "ai_analysis.provider_failure")
+        if getattr(record, "failure_category", None) == failure_category
+    ]
+    assert len(records) == 1
+    record = records[0]
+    assert record.symbol == "2330"
+    assert record.provider == "deepseek"
+    return record
 
 
 def test_ai_analysis_cache_miss_enqueues_job(auth_client, sample_stocks, monkeypatch):
@@ -124,6 +146,85 @@ def test_ai_analysis_cache_miss_enqueues_job(auth_client, sample_stocks, monkeyp
     assert response.json()["status"] == "pending"
     assert len(calls) == 1
     assert calls[0]["stock"].symbol == "2330"
+
+
+def test_ai_analysis_logs_degraded_fundamentals_unavailable(
+    auth_client,
+    sample_stocks,
+    monkeypatch,
+    caplog,
+):
+    calls = []
+    monkeypatch.setattr("app.routers.stocks.settings.DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setattr("app.routers.stocks.get_stock_fundamentals", lambda *args: None)
+
+    class FakeJobService:
+        def get_recent_success(self, *args):
+            return None
+
+        def get_active_job(self, *args):
+            return None
+
+        def has_recent_failure(self, *args):
+            return False
+
+        def enqueue(self, *args, **kwargs):
+            calls.append(kwargs)
+            return _job(125)
+
+    monkeypatch.setattr("app.routers.stocks.ai_analysis_job_service", FakeJobService())
+
+    with caplog.at_level(logging.WARNING, logger="app.routers.stocks"):
+        response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
+
+    assert response.status_code == status.HTTP_202_ACCEPTED
+    assert len(calls) == 1
+    records = _records_for(caplog, "ai_analysis.context_degraded")
+    assert len(records) == 1
+    assert records[0].symbol == "2330"
+    assert records[0].failure_category == "fundamentals_unavailable"
+
+
+def test_ai_analysis_logs_degraded_fundamentals_exception(
+    auth_client,
+    sample_stocks,
+    monkeypatch,
+    caplog,
+):
+    calls = []
+    monkeypatch.setattr("app.routers.stocks.settings.DEEPSEEK_API_KEY", "test-key")
+
+    def raise_fundamentals_error(*args):
+        raise RuntimeError("fundamentals source unavailable")
+
+    monkeypatch.setattr("app.routers.stocks.get_stock_fundamentals", raise_fundamentals_error)
+
+    class FakeJobService:
+        def get_recent_success(self, *args):
+            return None
+
+        def get_active_job(self, *args):
+            return None
+
+        def has_recent_failure(self, *args):
+            return False
+
+        def enqueue(self, *args, **kwargs):
+            calls.append(kwargs)
+            return _job(126)
+
+    monkeypatch.setattr("app.routers.stocks.ai_analysis_job_service", FakeJobService())
+
+    with caplog.at_level(logging.WARNING, logger="app.routers.stocks"):
+        response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
+
+    assert response.status_code == status.HTTP_202_ACCEPTED
+    assert len(calls) == 1
+    records = _records_for(caplog, "ai_analysis.context_degraded")
+    assert len(records) == 1
+    assert records[0].symbol == "2330"
+    assert records[0].failure_category == "fundamentals_exception"
+    assert records[0].exception_type == "RuntimeError"
 
 
 def test_ai_analysis_cache_hit_skips_job_service(auth_client, sample_stocks, monkeypatch):
@@ -262,19 +363,20 @@ def test_ai_analysis_stock_not_found(auth_client):
     assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
-def test_ai_analysis_missing_api_key_returns_503(auth_client, sample_stocks, monkeypatch):
+def test_ai_analysis_missing_api_key_returns_503(auth_client, sample_stocks, monkeypatch, caplog):
     monkeypatch.setattr(summaries.settings, "DEEPSEEK_API_KEY", None)
     monkeypatch.setattr("app.routers.stocks.get_stock_fundamentals", lambda *args: None)
 
-    response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
+    with caplog.at_level(logging.WARNING, logger="app.routers.stocks"):
+        response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
 
     assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    record = _provider_failure_record(caplog, "missing_api_key")
+    assert not hasattr(record, "request_id")
 
 
 def test_ai_analysis_recent_success_returns_200(auth_client, sample_stocks, monkeypatch):
-    result = AIAnalysisResponse.model_validate(
-        json.loads(_valid_ai_response("route-request-id"))
-    )
+    result = AIAnalysisResponse.model_validate(json.loads(_valid_ai_response("route-request-id")))
     monkeypatch.setattr("app.routers.stocks.get_stock_fundamentals", lambda *args: None)
     monkeypatch.setattr("app.routers.stocks.settings.DEEPSEEK_API_KEY", "test-key")
 
@@ -354,22 +456,23 @@ def test_ai_analysis_queue_or_circuit_open_returns_503(auth_client, sample_stock
     assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
 
-def test_generate_deepseek_analysis_serializes_decimal_context(monkeypatch):
+def test_generate_deepseek_analysis_serializes_decimal_context(monkeypatch, caplog):
     captured = {}
     request_id = "decimal-request-id"
     monkeypatch.setattr(summaries.settings, "DEEPSEEK_API_KEY", "test-key")
     monkeypatch.setattr(summaries.uuid, "uuid4", lambda: request_id)
     _patch_deepseek_client(monkeypatch, _valid_ai_response(request_id), captured)
 
-    result = summaries.generate_deepseek_analysis(
-        stock_code="2330",
-        company_name="TSMC",
-        context_data={
-            "pe_ratio": Decimal("18.25"),
-            "dividend_yield": Decimal("0.0215"),
-            "market_cap": Decimal("123456789.12"),
-        },
-    )
+    with caplog.at_level(logging.INFO, logger="app.services.summaries"):
+        result = summaries.generate_deepseek_analysis(
+            stock_code="2330",
+            company_name="TSMC",
+            context_data={
+                "pe_ratio": Decimal("18.25"),
+                "dividend_yield": Decimal("0.0215"),
+                "market_cap": Decimal("123456789.12"),
+            },
+        )
 
     assert result is not None
     assert result.request_id == request_id
@@ -378,42 +481,60 @@ def test_generate_deepseek_analysis_serializes_decimal_context(monkeypatch):
     user_prompt = captured["request"]["messages"][1]["content"]
     assert "18.25" in user_prompt
     assert "123456789.12" in user_prompt
+    success_records = _records_for(caplog, "ai_analysis.provider_success")
+    assert len(success_records) == 1
+    assert success_records[0].symbol == "2330"
+    assert success_records[0].provider == "deepseek"
+    assert success_records[0].request_id == request_id
+    assert success_records[0].action == 1
+    assert "test-key" not in success_records[0].getMessage()
+    assert "18.25" not in success_records[0].getMessage()
 
 
-def test_generate_deepseek_analysis_invalid_json_returns_none(monkeypatch):
+def test_generate_deepseek_analysis_invalid_json_returns_none(monkeypatch, caplog):
     captured = {}
     request_id = "invalid-json-request-id"
     monkeypatch.setattr(summaries.settings, "DEEPSEEK_API_KEY", "test-key")
     monkeypatch.setattr(summaries.uuid, "uuid4", lambda: request_id)
     _patch_deepseek_client(monkeypatch, "not json", captured)
 
-    result = summaries.generate_deepseek_analysis("2330", "TSMC", {})
+    with caplog.at_level(logging.WARNING, logger="app.services.summaries"):
+        result = summaries.generate_deepseek_analysis("2330", "TSMC", {})
 
     assert result is None
+    record = _provider_failure_record(caplog, "invalid_json")
+    assert record.request_id == request_id
+    assert record.exception_type == "JSONDecodeError"
 
 
-def test_generate_deepseek_analysis_provider_failure_returns_none(monkeypatch):
+def test_generate_deepseek_analysis_provider_failure_returns_none(monkeypatch, caplog):
     monkeypatch.setattr(summaries.settings, "DEEPSEEK_API_KEY", "test-key")
     _patch_failing_deepseek_client(monkeypatch)
 
-    result = summaries.generate_deepseek_analysis("2330", "TSMC", {})
+    with caplog.at_level(logging.WARNING, logger="app.services.summaries"):
+        result = summaries.generate_deepseek_analysis("2330", "TSMC", {})
 
     assert result is None
+    record = _provider_failure_record(caplog, "provider_exception")
+    assert record.exception_type == "RuntimeError"
 
 
-def test_generate_deepseek_analysis_invalid_action_returns_none(monkeypatch):
+def test_generate_deepseek_analysis_invalid_action_returns_none(monkeypatch, caplog):
     captured = {}
     request_id = "invalid-action-request-id"
     monkeypatch.setattr(summaries.settings, "DEEPSEEK_API_KEY", "test-key")
     monkeypatch.setattr(summaries.uuid, "uuid4", lambda: request_id)
     _patch_deepseek_client(monkeypatch, _valid_ai_response(request_id, action=2), captured)
 
-    result = summaries.generate_deepseek_analysis("2330", "TSMC", {})
+    with caplog.at_level(logging.WARNING, logger="app.services.summaries"):
+        result = summaries.generate_deepseek_analysis("2330", "TSMC", {})
 
     assert result is None
+    record = _provider_failure_record(caplog, "invalid_action")
+    assert record.request_id == request_id
 
 
-def test_generate_deepseek_analysis_request_id_mismatch_returns_none(monkeypatch):
+def test_generate_deepseek_analysis_request_id_mismatch_returns_none(monkeypatch, caplog):
     captured = {}
     monkeypatch.setattr(summaries.settings, "DEEPSEEK_API_KEY", "test-key")
     monkeypatch.setattr(summaries.uuid, "uuid4", lambda: "expected-request-id")
@@ -423,6 +544,43 @@ def test_generate_deepseek_analysis_request_id_mismatch_returns_none(monkeypatch
         captured,
     )
 
-    result = summaries.generate_deepseek_analysis("2330", "TSMC", {})
+    with caplog.at_level(logging.WARNING, logger="app.services.summaries"):
+        result = summaries.generate_deepseek_analysis("2330", "TSMC", {})
 
     assert result is None
+    record = _provider_failure_record(caplog, "request_id_mismatch")
+    assert record.request_id == "expected-request-id"
+
+
+def test_generate_deepseek_analysis_empty_response_returns_none(monkeypatch, caplog):
+    captured = {}
+    request_id = "empty-response-request-id"
+    monkeypatch.setattr(summaries.settings, "DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setattr(summaries.uuid, "uuid4", lambda: request_id)
+    _patch_deepseek_client(monkeypatch, "", captured)
+
+    with caplog.at_level(logging.WARNING, logger="app.services.summaries"):
+        result = summaries.generate_deepseek_analysis("2330", "TSMC", {})
+
+    assert result is None
+    record = _provider_failure_record(caplog, "empty_response")
+    assert record.request_id == request_id
+
+
+def test_generate_deepseek_analysis_timeout_returns_none(monkeypatch, caplog):
+    class FakeTimeoutError(Exception):
+        pass
+
+    request_id = "timeout-request-id"
+    monkeypatch.setattr(summaries.settings, "DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setattr(summaries.uuid, "uuid4", lambda: request_id)
+    monkeypatch.setattr(summaries, "APITimeoutError", FakeTimeoutError)
+    _patch_raising_deepseek_client(monkeypatch, FakeTimeoutError("request timed out"))
+
+    with caplog.at_level(logging.WARNING, logger="app.services.summaries"):
+        result = summaries.generate_deepseek_analysis("2330", "TSMC", {})
+
+    assert result is None
+    record = _provider_failure_record(caplog, "timeout")
+    assert record.request_id == request_id
+    assert record.exception_type == "FakeTimeoutError"

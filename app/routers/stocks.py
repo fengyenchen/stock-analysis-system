@@ -1,5 +1,6 @@
 import csv
 import io
+import logging
 from datetime import date, datetime, timezone
 from typing import List, Optional
 
@@ -38,6 +39,7 @@ from app.services.summaries import get_stock_summaries
 
 router = APIRouter(prefix="/stocks", tags=["Stocks"])
 sync_jobs_router = APIRouter(prefix="/stock-sync-jobs", tags=["Stock Sync Jobs"])
+logger = logging.getLogger(__name__)
 
 
 def _read_stock_sync_job(job: StockSyncJob) -> StockSyncJobRead:
@@ -80,7 +82,9 @@ def _read_ai_analysis_job(job: AIAnalysisJob) -> AIAnalysisJobRead:
 
 @router.get("", response_model=List[StockRead])
 def list_stocks(
-    q: Optional[str] = Query(None, min_length=1, description="Optional search query for stock name or symbol"),
+    q: Optional[str] = Query(
+        None, min_length=1, description="Optional search query for stock name or symbol"
+    ),
     offset: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
@@ -182,15 +186,17 @@ def get_stock_history(
         writer = csv.writer(output)
         writer.writerow(["date", "open", "high", "low", "close", "volume", "change"])
         for p in prices:
-            writer.writerow([
-                p.date.isoformat(),
-                p.open_price,
-                p.high_price,
-                p.low_price,
-                p.close_price,
-                p.volume,
-                p.change,
-            ])
+            writer.writerow(
+                [
+                    p.date.isoformat(),
+                    p.open_price,
+                    p.high_price,
+                    p.low_price,
+                    p.close_price,
+                    p.volume,
+                    p.change,
+                ]
+            )
         output.seek(0)
         return StreamingResponse(
             output,
@@ -400,6 +406,7 @@ def get_stock_profile(
         market_cap=fundamental.market_cap if fundamental else None,
     )
 
+
 @router.get(
     "/{symbol}/ai-analysis",
     response_model=AIAnalysisResponse | AIAnalysisJobRead,
@@ -431,6 +438,15 @@ def get_stock_ai_analysis(
         return cached_analysis
 
     if not settings.DEEPSEEK_API_KEY:
+        logger.warning(
+            "AI analysis provider failure",
+            extra={
+                "event": "ai_analysis.provider_failure",
+                "symbol": stock.symbol,
+                "provider": "deepseek",
+                "failure_category": "missing_api_key",
+            },
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=AI_ANALYSIS_BUSY_DETAIL,
@@ -454,8 +470,27 @@ def get_stock_ai_analysis(
 
     try:
         fundamental = get_stock_fundamentals(db, stock)
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "AI analysis context degraded",
+            extra={
+                "event": "ai_analysis.context_degraded",
+                "symbol": stock.symbol,
+                "failure_category": "fundamentals_exception",
+                "exception_type": exc.__class__.__name__,
+            },
+        )
         fundamental = None
+    else:
+        if fundamental is None:
+            logger.warning(
+                "AI analysis context degraded",
+                extra={
+                    "event": "ai_analysis.context_degraded",
+                    "symbol": stock.symbol,
+                    "failure_category": "fundamentals_unavailable",
+                },
+            )
 
     try:
         rec = get_stock_recommendation(db, stock)

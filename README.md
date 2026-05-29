@@ -309,6 +309,18 @@ All configuration is managed through environment variables in `.env`:
 | `AI_ANALYSIS_CIRCUIT_FAILURE_THRESHOLD` | 3 | Consecutive provider failures before opening the circuit |
 | `AI_ANALYSIS_CIRCUIT_COOLDOWN_SECONDS` | 60 | Seconds to reject new provider work after the circuit opens |
 
+## AI Analysis Health Signals
+
+AI analysis emits structured log fields for degraded context and provider health. Monitor the `event` field and alert on repeated warnings:
+
+| Event | Level | Key fields | Meaning |
+|-------|-------|------------|---------|
+| `ai_analysis.context_degraded` | warning | `symbol`, `failure_category` | Analysis was queued without complete fundamentals context. Categories are `fundamentals_unavailable` and `fundamentals_exception`. |
+| `ai_analysis.provider_failure` | warning | `symbol`, `provider`, `failure_category`, `request_id` when available | DeepSeek analysis did not produce a valid response. Categories are `missing_api_key`, `timeout`, `invalid_json`, `invalid_action`, `request_id_mismatch`, `provider_exception`, and `empty_response`. |
+| `ai_analysis.provider_success` | info | `symbol`, `provider`, `request_id`, `action` | DeepSeek returned a validated AI analysis. |
+
+These logs intentionally omit API keys, full prompts, and full provider responses.
+
 Frontend builds use these Vite variables:
 
 | Variable | Default | Description |

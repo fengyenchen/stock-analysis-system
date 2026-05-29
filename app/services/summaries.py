@@ -2,10 +2,12 @@ import json
 import logging
 import uuid
 from decimal import Decimal
+from json import JSONDecodeError
 from typing import List
 
 from fastapi.encoders import jsonable_encoder
-from openai import OpenAI
+from openai import APITimeoutError, OpenAI
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -14,6 +16,42 @@ from app.schemas import AIAnalysisResponse, StockSummaryRead
 from app.services.recommendations import get_stock_recommendation
 
 logger = logging.getLogger(__name__)
+AI_ANALYSIS_PROVIDER = "deepseek"
+
+
+def _log_provider_failure(
+    stock_code: str,
+    failure_category: str,
+    *,
+    request_id: str | None = None,
+    exc: Exception | None = None,
+) -> None:
+    extra = {
+        "event": "ai_analysis.provider_failure",
+        "symbol": stock_code,
+        "provider": AI_ANALYSIS_PROVIDER,
+        "failure_category": failure_category,
+    }
+    if request_id:
+        extra["request_id"] = request_id
+    if exc:
+        extra["exception_type"] = exc.__class__.__name__
+
+    logger.warning("AI analysis provider failure", extra=extra)
+
+
+def _log_provider_success(stock_code: str, request_id: str, action: int) -> None:
+    logger.info(
+        "AI analysis provider success",
+        extra={
+            "event": "ai_analysis.provider_success",
+            "symbol": stock_code,
+            "provider": AI_ANALYSIS_PROVIDER,
+            "request_id": request_id,
+            "action": action,
+        },
+    )
+
 
 def get_stock_summaries(db: Session, symbols: List[str]) -> List[StockSummaryRead]:
     """Return enriched summaries for a batch of stock symbols.
@@ -21,11 +59,7 @@ def get_stock_summaries(db: Session, symbols: List[str]) -> List[StockSummaryRea
     Reads the latest cached price and computes recommendations from historical
     data already stored in the database. Does not hit external real-time APIs.
     """
-    stocks = (
-        db.query(Stock)
-        .filter(Stock.symbol.in_(symbols), Stock.is_active == True)
-        .all()
-    )
+    stocks = db.query(Stock).filter(Stock.symbol.in_(symbols), Stock.is_active == True).all()
 
     stock_map = {s.symbol: s for s in stocks}
     result: List[StockSummaryRead] = []
@@ -51,9 +85,7 @@ def get_stock_summaries(db: Session, symbols: List[str]) -> List[StockSummaryRea
             .limit(20)
             .all()
         )
-        sparkline_data = [
-            Decimal(str(r.close_price)) for r in reversed(sparkline_rows)
-        ]
+        sparkline_data = [Decimal(str(r.close_price)) for r in reversed(sparkline_rows)]
 
         # Recommendation from cached data
         try:
@@ -74,8 +106,12 @@ def get_stock_summaries(db: Session, symbols: List[str]) -> List[StockSummaryRea
                 industry=stock.industry,
                 is_etf=stock.is_etf,
                 price=Decimal(str(latest_price.close_price)) if latest_price else None,
-                change=Decimal(str(latest_price.change)) if latest_price and latest_price.change is not None else None,
-                change_percent=Decimal(str(latest_price.change_percent)) if latest_price and latest_price.change_percent is not None else None,
+                change=Decimal(str(latest_price.change))
+                if latest_price and latest_price.change is not None
+                else None,
+                change_percent=Decimal(str(latest_price.change_percent))
+                if latest_price and latest_price.change_percent is not None
+                else None,
                 recommendation=recommendation,
                 confidence=confidence,
                 composite_score=composite_score,
@@ -93,7 +129,7 @@ def generate_deepseek_analysis(
     timeout_seconds: float | None = None,
 ) -> AIAnalysisResponse | None:
     if not settings.DEEPSEEK_API_KEY:
-        logger.warning("DeepSeek API key is not configured")
+        _log_provider_failure(stock_code, "missing_api_key")
         return None
 
     req_id = str(uuid.uuid4())
@@ -124,34 +160,70 @@ def generate_deepseek_analysis(
         client = OpenAI(
             api_key=settings.DEEPSEEK_API_KEY,
             base_url="https://api.deepseek.com",
-            timeout=timeout_seconds if timeout_seconds is not None else settings.ai_analysis_provider_timeout_seconds,
+            timeout=timeout_seconds
+            if timeout_seconds is not None
+            else settings.ai_analysis_provider_timeout_seconds,
             max_retries=0,
         )
         response = client.chat.completions.create(
             model="deepseek-chat",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
+                {"role": "user", "content": user_prompt},
             ],
             temperature=0.3,
-            max_tokens=800
+            max_tokens=800,
         )
 
         raw_output = response.choices[0].message.content if response.choices else None
         if not raw_output:
+            _log_provider_failure(stock_code, "empty_response", request_id=req_id)
             return None
         raw_output = raw_output.strip()
 
         if raw_output.startswith("```"):
             raw_output = raw_output.strip("`").removeprefix("json").strip()
 
-        result_dict = json.loads(raw_output)
-        result = AIAnalysisResponse(**result_dict)
-        if result.request_id != req_id:
-            logger.warning("DeepSeek response request_id mismatch")
+        try:
+            result_dict = json.loads(raw_output)
+        except JSONDecodeError as exc:
+            _log_provider_failure(
+                stock_code,
+                "invalid_json",
+                request_id=req_id,
+                exc=exc,
+            )
             return None
+
+        if "action" in result_dict and result_dict["action"] not in (-1, 0, 1):
+            _log_provider_failure(stock_code, "invalid_action", request_id=req_id)
+            return None
+
+        try:
+            result = AIAnalysisResponse(**result_dict)
+        except ValidationError as exc:
+            _log_provider_failure(
+                stock_code,
+                "provider_exception",
+                request_id=req_id,
+                exc=exc,
+            )
+            return None
+
+        if result.request_id != req_id:
+            _log_provider_failure(stock_code, "request_id_mismatch", request_id=req_id)
+            return None
+        _log_provider_success(stock_code, req_id, result.action)
         return result
 
-    except Exception as e:
-        logger.warning("DeepSeek analysis generation failed: %s", e)
+    except APITimeoutError as exc:
+        _log_provider_failure(stock_code, "timeout", request_id=req_id, exc=exc)
+        return None
+    except Exception as exc:
+        _log_provider_failure(
+            stock_code,
+            "provider_exception",
+            request_id=req_id,
+            exc=exc,
+        )
         return None
