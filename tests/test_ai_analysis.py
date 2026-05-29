@@ -6,6 +6,18 @@ from fastapi import status
 
 from app.schemas import AIAnalysisResponse
 from app.services import summaries
+from app.services.ai_analysis_cache import AIAnalysisCache
+
+
+class _FakeClock:
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+    def advance(self, seconds: float):
+        self.now += seconds
 
 
 def _valid_ai_response(request_id: str, action: int = 1) -> str:
@@ -24,6 +36,10 @@ def _valid_ai_response(request_id: str, action: int = 1) -> str:
             },
         }
     )
+
+
+def _ai_response(request_id: str) -> AIAnalysisResponse:
+    return AIAnalysisResponse.model_validate(json.loads(_valid_ai_response(request_id)))
 
 
 def _patch_deepseek_client(monkeypatch, content: str, captured: dict):
@@ -58,10 +74,152 @@ def _patch_failing_deepseek_client(monkeypatch):
     monkeypatch.setattr(summaries, "OpenAI", FakeOpenAI)
 
 
+def test_ai_analysis_cache_miss_calls_provider(auth_client, sample_stocks, monkeypatch):
+    clock = _FakeClock()
+    cache = AIAnalysisCache(clock=clock)
+    calls = []
+
+    monkeypatch.setattr("app.routers.stocks.ai_analysis_cache", cache)
+    monkeypatch.setattr("app.routers.stocks.settings.ai_analysis_cache_ttl_seconds", 300)
+    monkeypatch.setattr("app.routers.stocks.get_stock_fundamentals", lambda *args: None)
+
+    def fake_generate_deepseek_analysis(**kwargs):
+        calls.append(kwargs)
+        return _ai_response("cache-miss-request-id")
+
+    monkeypatch.setattr(
+        "app.routers.stocks.generate_deepseek_analysis",
+        fake_generate_deepseek_analysis,
+    )
+
+    response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["request_id"] == "cache-miss-request-id"
+    assert len(calls) == 1
+
+
+def test_ai_analysis_cache_hit_skips_provider(auth_client, sample_stocks, monkeypatch):
+    clock = _FakeClock()
+    cache = AIAnalysisCache(clock=clock)
+    calls = []
+
+    monkeypatch.setattr("app.routers.stocks.ai_analysis_cache", cache)
+    monkeypatch.setattr("app.routers.stocks.settings.ai_analysis_cache_ttl_seconds", 300)
+    monkeypatch.setattr("app.routers.stocks.get_stock_fundamentals", lambda *args: None)
+
+    def fake_generate_deepseek_analysis(**kwargs):
+        calls.append(kwargs)
+        return _ai_response(f"provider-call-{len(calls)}")
+
+    monkeypatch.setattr(
+        "app.routers.stocks.generate_deepseek_analysis",
+        fake_generate_deepseek_analysis,
+    )
+
+    first_response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
+    second_response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
+
+    assert first_response.status_code == status.HTTP_200_OK
+    assert second_response.status_code == status.HTTP_200_OK
+    assert first_response.json()["request_id"] == "provider-call-1"
+    assert second_response.json()["request_id"] == "provider-call-1"
+    assert first_response.json().keys() == second_response.json().keys()
+    assert len(calls) == 1
+
+
+def test_ai_analysis_cache_expires_after_ttl(auth_client, sample_stocks, monkeypatch):
+    clock = _FakeClock()
+    cache = AIAnalysisCache(clock=clock)
+    calls = []
+
+    monkeypatch.setattr("app.routers.stocks.ai_analysis_cache", cache)
+    monkeypatch.setattr("app.routers.stocks.settings.ai_analysis_cache_ttl_seconds", 5)
+    monkeypatch.setattr("app.routers.stocks.get_stock_fundamentals", lambda *args: None)
+
+    def fake_generate_deepseek_analysis(**kwargs):
+        calls.append(kwargs)
+        return _ai_response(f"provider-call-{len(calls)}")
+
+    monkeypatch.setattr(
+        "app.routers.stocks.generate_deepseek_analysis",
+        fake_generate_deepseek_analysis,
+    )
+
+    first_response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
+    clock.advance(5)
+    second_response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
+
+    assert first_response.status_code == status.HTTP_200_OK
+    assert second_response.status_code == status.HTTP_200_OK
+    assert first_response.json()["request_id"] == "provider-call-1"
+    assert second_response.json()["request_id"] == "provider-call-2"
+    assert len(calls) == 2
+
+
+def test_ai_analysis_cache_disabled_by_zero_ttl(auth_client, sample_stocks, monkeypatch):
+    clock = _FakeClock()
+    cache = AIAnalysisCache(clock=clock)
+    calls = []
+
+    monkeypatch.setattr("app.routers.stocks.ai_analysis_cache", cache)
+    monkeypatch.setattr("app.routers.stocks.settings.ai_analysis_cache_ttl_seconds", 0)
+    monkeypatch.setattr("app.routers.stocks.get_stock_fundamentals", lambda *args: None)
+
+    def fake_generate_deepseek_analysis(**kwargs):
+        calls.append(kwargs)
+        return _ai_response(f"provider-call-{len(calls)}")
+
+    monkeypatch.setattr(
+        "app.routers.stocks.generate_deepseek_analysis",
+        fake_generate_deepseek_analysis,
+    )
+
+    first_response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
+    second_response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
+
+    assert first_response.status_code == status.HTTP_200_OK
+    assert second_response.status_code == status.HTTP_200_OK
+    assert first_response.json()["request_id"] == "provider-call-1"
+    assert second_response.json()["request_id"] == "provider-call-2"
+    assert len(calls) == 2
+
+
 def test_ai_analysis_requires_auth(client, sample_stocks):
     response = client.get("/api/v1/stocks/2330/ai-analysis")
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_ai_analysis_requires_auth_before_cache_lookup_or_provider(
+    client,
+    sample_stocks,
+    monkeypatch,
+):
+    calls = {"cache": 0, "provider": 0}
+
+    class FakeCache:
+        def get(self, symbol):
+            calls["cache"] += 1
+            return None
+
+        def set(self, symbol, response, ttl_seconds):
+            pass
+
+    def fake_generate_deepseek_analysis(**kwargs):
+        calls["provider"] += 1
+        return _ai_response("provider-request-id")
+
+    monkeypatch.setattr("app.routers.stocks.ai_analysis_cache", FakeCache())
+    monkeypatch.setattr(
+        "app.routers.stocks.generate_deepseek_analysis",
+        fake_generate_deepseek_analysis,
+    )
+
+    response = client.get("/api/v1/stocks/2330/ai-analysis")
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert calls == {"cache": 0, "provider": 0}
 
 
 def test_ai_analysis_stock_not_found(auth_client):

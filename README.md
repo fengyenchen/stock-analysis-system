@@ -302,6 +302,7 @@ All configuration is managed through environment variables in `.env`:
 | `STOCK_DAILY_SYNC_MINUTE` | 30 | Daily sync minute |
 | `STOCK_SYNC_MAX_CONCURRENT` | 8 | Max concurrent workers for sync fallback |
 | `STOCK_SYNC_RATE_LIMIT_SECONDS` | 0.3 | Delay between fallback sync requests |
+| `AI_ANALYSIS_CACHE_TTL_SECONDS` | 300 | Short-term AI analysis cache TTL; set to 0 to disable |
 
 Frontend builds use these Vite variables:
 

@@ -29,6 +29,10 @@ class TestSettingsDefaults:
         assert s.access_token_expire_minutes == 15
         assert s.refresh_token_expire_days == 7
 
+    def test_default_ai_analysis_cache_ttl(self):
+        s = Settings()
+        assert s.ai_analysis_cache_ttl_seconds == 300
+
     def test_secret_key_has_reasonable_length(self):
         s = Settings()
         assert len(s.secret_key) >= 16
@@ -54,6 +58,11 @@ class TestSettingsEnvOverride:
         with patch.dict(os.environ, {"CORS_ORIGINS": "http://localhost:3000,http://localhost:8080"}, clear=False):
             s = Settings()
             assert s.cors_origins == "http://localhost:3000,http://localhost:8080"
+
+    def test_env_override_ai_analysis_cache_ttl(self):
+        with patch.dict(os.environ, {"AI_ANALYSIS_CACHE_TTL_SECONDS": "60"}, clear=False):
+            s = Settings()
+            assert s.ai_analysis_cache_ttl_seconds == 60
 
 
 class TestSettingsValidation:

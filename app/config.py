@@ -35,6 +35,7 @@ class Settings(BaseSettings):
         env_file_encoding = "utf-8"
 
     DEEPSEEK_API_KEY: str | None = None
+    ai_analysis_cache_ttl_seconds: int = 300
 
 
 settings = Settings()

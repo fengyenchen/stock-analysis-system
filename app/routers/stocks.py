@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_active_user
 from app.limiter import conditional_limit, get_authenticated_subject_or_address
@@ -23,6 +24,7 @@ from app.schemas import (
     StockSyncJobRead,
     StockSyncStatusRead,
 )
+from app.services.ai_analysis_cache import ai_analysis_cache
 from app.services.fundamentals import get_stock_fundamentals
 from app.services.recommendations import get_stock_recommendation
 from app.services.stock_data import async_get_realtime_quote, sync_historical_prices
@@ -390,6 +392,10 @@ def get_stock_ai_analysis(
             detail=f"Stock {symbol} not found",
         )
 
+    cached_analysis = ai_analysis_cache.get(stock.symbol)
+    if cached_analysis:
+        return cached_analysis
+
     try:
         fundamental = get_stock_fundamentals(db, stock)
     except Exception:
@@ -420,5 +426,11 @@ def get_stock_ai_analysis(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="系統繁忙，暫時無法產生 AI 分析"
         )
+
+    ai_analysis_cache.set(
+        stock.symbol,
+        analysis_result,
+        settings.ai_analysis_cache_ttl_seconds,
+    )
 
     return analysis_result
