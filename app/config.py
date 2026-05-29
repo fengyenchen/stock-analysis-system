@@ -36,6 +36,11 @@ class Settings(BaseSettings):
 
     DEEPSEEK_API_KEY: str | None = None
     ai_analysis_cache_ttl_seconds: int = 300
+    ai_analysis_provider_timeout_seconds: float = 20.0
+    ai_analysis_max_concurrent_jobs: int = 2
+    ai_analysis_max_queued_jobs: int = 20
+    ai_analysis_circuit_failure_threshold: int = 3
+    ai_analysis_circuit_cooldown_seconds: int = 60
 
 
 settings = Settings()

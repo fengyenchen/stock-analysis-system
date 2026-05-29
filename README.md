@@ -303,6 +303,11 @@ All configuration is managed through environment variables in `.env`:
 | `STOCK_SYNC_MAX_CONCURRENT` | 8 | Max concurrent workers for sync fallback |
 | `STOCK_SYNC_RATE_LIMIT_SECONDS` | 0.3 | Delay between fallback sync requests |
 | `AI_ANALYSIS_CACHE_TTL_SECONDS` | 300 | Short-term AI analysis cache TTL; set to 0 to disable |
+| `AI_ANALYSIS_PROVIDER_TIMEOUT_SECONDS` | 20.0 | DeepSeek provider call timeout per background job |
+| `AI_ANALYSIS_MAX_CONCURRENT_JOBS` | 2 | Max AI analysis provider jobs running at once |
+| `AI_ANALYSIS_MAX_QUEUED_JOBS` | 20 | Max AI analysis provider jobs waiting to run |
+| `AI_ANALYSIS_CIRCUIT_FAILURE_THRESHOLD` | 3 | Consecutive provider failures before opening the circuit |
+| `AI_ANALYSIS_CIRCUIT_COOLDOWN_SECONDS` | 60 | Seconds to reject new provider work after the circuit opens |
 
 Frontend builds use these Vite variables:
 

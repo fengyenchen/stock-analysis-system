@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -7,6 +8,7 @@ from fastapi import status
 from app.schemas import AIAnalysisResponse
 from app.services import summaries
 from app.services.ai_analysis_cache import AIAnalysisCache
+from app.services.ai_analysis_jobs import AIAnalysisProviderUnavailable
 
 
 class _FakeClock:
@@ -42,6 +44,20 @@ def _ai_response(request_id: str) -> AIAnalysisResponse:
     return AIAnalysisResponse.model_validate(json.loads(_valid_ai_response(request_id)))
 
 
+def _job(job_id: int, symbol: str = "2330", status_value: str = "pending") -> SimpleNamespace:
+    now = datetime.now(timezone.utc)
+    return SimpleNamespace(
+        id=job_id,
+        stock=SimpleNamespace(symbol=symbol),
+        status=status_value,
+        result_json=None,
+        last_error=None,
+        created_at=now,
+        started_at=None,
+        completed_at=None,
+    )
+
+
 def _patch_deepseek_client(monkeypatch, content: str, captured: dict):
     class FakeCompletions:
         def create(self, **kwargs):
@@ -74,58 +90,60 @@ def _patch_failing_deepseek_client(monkeypatch):
     monkeypatch.setattr(summaries, "OpenAI", FakeOpenAI)
 
 
-def test_ai_analysis_cache_miss_calls_provider(auth_client, sample_stocks, monkeypatch):
+def test_ai_analysis_cache_miss_enqueues_job(auth_client, sample_stocks, monkeypatch):
     clock = _FakeClock()
     cache = AIAnalysisCache(clock=clock)
     calls = []
 
     monkeypatch.setattr("app.routers.stocks.ai_analysis_cache", cache)
     monkeypatch.setattr("app.routers.stocks.settings.ai_analysis_cache_ttl_seconds", 300)
+    monkeypatch.setattr("app.routers.stocks.settings.DEEPSEEK_API_KEY", "test-key")
     monkeypatch.setattr("app.routers.stocks.get_stock_fundamentals", lambda *args: None)
 
-    def fake_generate_deepseek_analysis(**kwargs):
-        calls.append(kwargs)
-        return _ai_response("cache-miss-request-id")
+    class FakeJobService:
+        def get_recent_success(self, *args):
+            return None
 
-    monkeypatch.setattr(
-        "app.routers.stocks.generate_deepseek_analysis",
-        fake_generate_deepseek_analysis,
-    )
+        def get_active_job(self, *args):
+            return None
+
+        def has_recent_failure(self, *args):
+            return False
+
+        def enqueue(self, *args, **kwargs):
+            calls.append(kwargs)
+            return _job(123)
+
+    monkeypatch.setattr("app.routers.stocks.ai_analysis_job_service", FakeJobService())
+
+    response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
+
+    assert response.status_code == status.HTTP_202_ACCEPTED
+    assert response.headers["location"] == "/api/v1/stocks/2330/ai-analysis"
+    assert response.json()["id"] == 123
+    assert response.json()["status"] == "pending"
+    assert len(calls) == 1
+    assert calls[0]["stock"].symbol == "2330"
+
+
+def test_ai_analysis_cache_hit_skips_job_service(auth_client, sample_stocks, monkeypatch):
+    clock = _FakeClock()
+    cache = AIAnalysisCache(clock=clock)
+    cache.set("2330", _ai_response("cached-request-id"), ttl_seconds=300)
+
+    monkeypatch.setattr("app.routers.stocks.ai_analysis_cache", cache)
+    monkeypatch.setattr("app.routers.stocks.settings.DEEPSEEK_API_KEY", "test-key")
+
+    class FakeJobService:
+        def get_recent_success(self, *args):
+            raise AssertionError("job service should not be called on cache hit")
+
+    monkeypatch.setattr("app.routers.stocks.ai_analysis_job_service", FakeJobService())
 
     response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
 
     assert response.status_code == status.HTTP_200_OK
-    assert response.json()["request_id"] == "cache-miss-request-id"
-    assert len(calls) == 1
-
-
-def test_ai_analysis_cache_hit_skips_provider(auth_client, sample_stocks, monkeypatch):
-    clock = _FakeClock()
-    cache = AIAnalysisCache(clock=clock)
-    calls = []
-
-    monkeypatch.setattr("app.routers.stocks.ai_analysis_cache", cache)
-    monkeypatch.setattr("app.routers.stocks.settings.ai_analysis_cache_ttl_seconds", 300)
-    monkeypatch.setattr("app.routers.stocks.get_stock_fundamentals", lambda *args: None)
-
-    def fake_generate_deepseek_analysis(**kwargs):
-        calls.append(kwargs)
-        return _ai_response(f"provider-call-{len(calls)}")
-
-    monkeypatch.setattr(
-        "app.routers.stocks.generate_deepseek_analysis",
-        fake_generate_deepseek_analysis,
-    )
-
-    first_response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
-    second_response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
-
-    assert first_response.status_code == status.HTTP_200_OK
-    assert second_response.status_code == status.HTTP_200_OK
-    assert first_response.json()["request_id"] == "provider-call-1"
-    assert second_response.json()["request_id"] == "provider-call-1"
-    assert first_response.json().keys() == second_response.json().keys()
-    assert len(calls) == 1
+    assert response.json()["request_id"] == "cached-request-id"
 
 
 def test_ai_analysis_cache_expires_after_ttl(auth_client, sample_stocks, monkeypatch):
@@ -135,26 +153,36 @@ def test_ai_analysis_cache_expires_after_ttl(auth_client, sample_stocks, monkeyp
 
     monkeypatch.setattr("app.routers.stocks.ai_analysis_cache", cache)
     monkeypatch.setattr("app.routers.stocks.settings.ai_analysis_cache_ttl_seconds", 5)
+    monkeypatch.setattr("app.routers.stocks.settings.DEEPSEEK_API_KEY", "test-key")
     monkeypatch.setattr("app.routers.stocks.get_stock_fundamentals", lambda *args: None)
 
-    def fake_generate_deepseek_analysis(**kwargs):
-        calls.append(kwargs)
-        return _ai_response(f"provider-call-{len(calls)}")
+    cache.set("2330", _ai_response("cached-request-id"), ttl_seconds=5)
 
-    monkeypatch.setattr(
-        "app.routers.stocks.generate_deepseek_analysis",
-        fake_generate_deepseek_analysis,
-    )
+    class FakeJobService:
+        def get_recent_success(self, *args):
+            return None
+
+        def get_active_job(self, *args):
+            return None
+
+        def has_recent_failure(self, *args):
+            return False
+
+        def enqueue(self, *args, **kwargs):
+            calls.append(kwargs)
+            return _job(124)
+
+    monkeypatch.setattr("app.routers.stocks.ai_analysis_job_service", FakeJobService())
 
     first_response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
     clock.advance(5)
     second_response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
 
     assert first_response.status_code == status.HTTP_200_OK
-    assert second_response.status_code == status.HTTP_200_OK
-    assert first_response.json()["request_id"] == "provider-call-1"
-    assert second_response.json()["request_id"] == "provider-call-2"
-    assert len(calls) == 2
+    assert second_response.status_code == status.HTTP_202_ACCEPTED
+    assert first_response.json()["request_id"] == "cached-request-id"
+    assert second_response.json()["id"] == 124
+    assert len(calls) == 1
 
 
 def test_ai_analysis_cache_disabled_by_zero_ttl(auth_client, sample_stocks, monkeypatch):
@@ -164,24 +192,32 @@ def test_ai_analysis_cache_disabled_by_zero_ttl(auth_client, sample_stocks, monk
 
     monkeypatch.setattr("app.routers.stocks.ai_analysis_cache", cache)
     monkeypatch.setattr("app.routers.stocks.settings.ai_analysis_cache_ttl_seconds", 0)
+    monkeypatch.setattr("app.routers.stocks.settings.DEEPSEEK_API_KEY", "test-key")
     monkeypatch.setattr("app.routers.stocks.get_stock_fundamentals", lambda *args: None)
 
-    def fake_generate_deepseek_analysis(**kwargs):
-        calls.append(kwargs)
-        return _ai_response(f"provider-call-{len(calls)}")
+    class FakeJobService:
+        def get_recent_success(self, *args):
+            return None
 
-    monkeypatch.setattr(
-        "app.routers.stocks.generate_deepseek_analysis",
-        fake_generate_deepseek_analysis,
-    )
+        def get_active_job(self, *args):
+            return None
+
+        def has_recent_failure(self, *args):
+            return False
+
+        def enqueue(self, *args, **kwargs):
+            calls.append(kwargs)
+            return _job(200 + len(calls))
+
+    monkeypatch.setattr("app.routers.stocks.ai_analysis_job_service", FakeJobService())
 
     first_response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
     second_response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
 
-    assert first_response.status_code == status.HTTP_200_OK
-    assert second_response.status_code == status.HTTP_200_OK
-    assert first_response.json()["request_id"] == "provider-call-1"
-    assert second_response.json()["request_id"] == "provider-call-2"
+    assert first_response.status_code == status.HTTP_202_ACCEPTED
+    assert second_response.status_code == status.HTTP_202_ACCEPTED
+    assert first_response.json()["id"] == 201
+    assert second_response.json()["id"] == 202
     assert len(calls) == 2
 
 
@@ -206,15 +242,13 @@ def test_ai_analysis_requires_auth_before_cache_lookup_or_provider(
         def set(self, symbol, response, ttl_seconds):
             pass
 
-    def fake_generate_deepseek_analysis(**kwargs):
-        calls["provider"] += 1
-        return _ai_response("provider-request-id")
+    class FakeJobService:
+        def get_recent_success(self, *args):
+            calls["provider"] += 1
+            return _ai_response("provider-request-id")
 
     monkeypatch.setattr("app.routers.stocks.ai_analysis_cache", FakeCache())
-    monkeypatch.setattr(
-        "app.routers.stocks.generate_deepseek_analysis",
-        fake_generate_deepseek_analysis,
-    )
+    monkeypatch.setattr("app.routers.stocks.ai_analysis_job_service", FakeJobService())
 
     response = client.get("/api/v1/stocks/2330/ai-analysis")
 
@@ -237,21 +271,87 @@ def test_ai_analysis_missing_api_key_returns_503(auth_client, sample_stocks, mon
     assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
 
-def test_ai_analysis_success(auth_client, sample_stocks, monkeypatch):
+def test_ai_analysis_recent_success_returns_200(auth_client, sample_stocks, monkeypatch):
     result = AIAnalysisResponse.model_validate(
         json.loads(_valid_ai_response("route-request-id"))
     )
     monkeypatch.setattr("app.routers.stocks.get_stock_fundamentals", lambda *args: None)
-    monkeypatch.setattr(
-        "app.routers.stocks.generate_deepseek_analysis",
-        lambda **kwargs: result,
-    )
+    monkeypatch.setattr("app.routers.stocks.settings.DEEPSEEK_API_KEY", "test-key")
+
+    class FakeJobService:
+        def get_recent_success(self, *args):
+            return result
+
+    monkeypatch.setattr("app.routers.stocks.ai_analysis_job_service", FakeJobService())
 
     response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
 
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["request_id"] == "route-request-id"
     assert response.json()["action"] == 1
+
+
+def test_ai_analysis_active_job_returns_202(auth_client, sample_stocks, monkeypatch):
+    monkeypatch.setattr("app.routers.stocks.settings.DEEPSEEK_API_KEY", "test-key")
+
+    class FakeJobService:
+        def get_recent_success(self, *args):
+            return None
+
+        def get_active_job(self, *args):
+            return _job(321, status_value="running")
+
+    monkeypatch.setattr("app.routers.stocks.ai_analysis_job_service", FakeJobService())
+
+    response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
+
+    assert response.status_code == status.HTTP_202_ACCEPTED
+    assert response.json()["id"] == 321
+    assert response.json()["status"] == "running"
+
+
+def test_ai_analysis_recent_failed_job_returns_503(auth_client, sample_stocks, monkeypatch):
+    monkeypatch.setattr("app.routers.stocks.settings.DEEPSEEK_API_KEY", "test-key")
+
+    class FakeJobService:
+        def get_recent_success(self, *args):
+            return None
+
+        def get_active_job(self, *args):
+            return None
+
+        def has_recent_failure(self, *args):
+            return True
+
+    monkeypatch.setattr("app.routers.stocks.ai_analysis_job_service", FakeJobService())
+
+    response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
+
+    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+
+
+def test_ai_analysis_queue_or_circuit_open_returns_503(auth_client, sample_stocks, monkeypatch):
+    monkeypatch.setattr("app.routers.stocks.settings.DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setattr("app.routers.stocks.get_stock_fundamentals", lambda *args: None)
+
+    class FakeJobService:
+        def get_recent_success(self, *args):
+            return None
+
+        def get_active_job(self, *args):
+            return None
+
+        def has_recent_failure(self, *args):
+            return False
+
+        def enqueue(self, *args, **kwargs):
+            raise AIAnalysisProviderUnavailable("circuit open")
+
+    monkeypatch.setattr("app.routers.stocks.ai_analysis_job_service", FakeJobService())
+
+    response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
+
+    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
 
 def test_generate_deepseek_analysis_serializes_decimal_context(monkeypatch):

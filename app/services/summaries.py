@@ -86,7 +86,12 @@ def get_stock_summaries(db: Session, symbols: List[str]) -> List[StockSummaryRea
     return result
 
 
-def generate_deepseek_analysis(stock_code: str, company_name: str, context_data: dict) -> AIAnalysisResponse | None:
+def generate_deepseek_analysis(
+    stock_code: str,
+    company_name: str,
+    context_data: dict,
+    timeout_seconds: float | None = None,
+) -> AIAnalysisResponse | None:
     if not settings.DEEPSEEK_API_KEY:
         logger.warning("DeepSeek API key is not configured")
         return None
@@ -119,7 +124,7 @@ def generate_deepseek_analysis(stock_code: str, company_name: str, context_data:
         client = OpenAI(
             api_key=settings.DEEPSEEK_API_KEY,
             base_url="https://api.deepseek.com",
-            timeout=20.0,
+            timeout=timeout_seconds if timeout_seconds is not None else settings.ai_analysis_provider_timeout_seconds,
             max_retries=0,
         )
         response = client.chat.completions.create(

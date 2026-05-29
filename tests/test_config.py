@@ -33,6 +33,14 @@ class TestSettingsDefaults:
         s = Settings()
         assert s.ai_analysis_cache_ttl_seconds == 300
 
+    def test_default_ai_analysis_provider_resilience_settings(self):
+        s = Settings()
+        assert s.ai_analysis_provider_timeout_seconds == 20.0
+        assert s.ai_analysis_max_concurrent_jobs == 2
+        assert s.ai_analysis_max_queued_jobs == 20
+        assert s.ai_analysis_circuit_failure_threshold == 3
+        assert s.ai_analysis_circuit_cooldown_seconds == 60
+
     def test_secret_key_has_reasonable_length(self):
         s = Settings()
         assert len(s.secret_key) >= 16
@@ -63,6 +71,25 @@ class TestSettingsEnvOverride:
         with patch.dict(os.environ, {"AI_ANALYSIS_CACHE_TTL_SECONDS": "60"}, clear=False):
             s = Settings()
             assert s.ai_analysis_cache_ttl_seconds == 60
+
+    def test_env_override_ai_analysis_provider_resilience_settings(self):
+        with patch.dict(
+            os.environ,
+            {
+                "AI_ANALYSIS_PROVIDER_TIMEOUT_SECONDS": "7.5",
+                "AI_ANALYSIS_MAX_CONCURRENT_JOBS": "1",
+                "AI_ANALYSIS_MAX_QUEUED_JOBS": "3",
+                "AI_ANALYSIS_CIRCUIT_FAILURE_THRESHOLD": "2",
+                "AI_ANALYSIS_CIRCUIT_COOLDOWN_SECONDS": "30",
+            },
+            clear=False,
+        ):
+            s = Settings()
+            assert s.ai_analysis_provider_timeout_seconds == 7.5
+            assert s.ai_analysis_max_concurrent_jobs == 1
+            assert s.ai_analysis_max_queued_jobs == 3
+            assert s.ai_analysis_circuit_failure_threshold == 2
+            assert s.ai_analysis_circuit_cooldown_seconds == 30
 
 
 class TestSettingsValidation:

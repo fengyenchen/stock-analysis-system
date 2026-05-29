@@ -11,8 +11,9 @@ from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_active_user
 from app.limiter import conditional_limit, get_authenticated_subject_or_address
-from app.models import Stock, StockPrice, StockSyncJob, StockSyncStatus, User
+from app.models import AIAnalysisJob, Stock, StockPrice, StockSyncJob, StockSyncStatus, User
 from app.schemas import (
+    AIAnalysisJobRead,
     AIAnalysisResponse,
     StockFundamentalRead,
     StockProfileRead,
@@ -25,10 +26,15 @@ from app.schemas import (
     StockSyncStatusRead,
 )
 from app.services.ai_analysis_cache import ai_analysis_cache
+from app.services.ai_analysis_jobs import (
+    AI_ANALYSIS_BUSY_DETAIL,
+    AIAnalysisProviderUnavailable,
+    ai_analysis_job_service,
+)
 from app.services.fundamentals import get_stock_fundamentals
 from app.services.recommendations import get_stock_recommendation
 from app.services.stock_data import async_get_realtime_quote, sync_historical_prices
-from app.services.summaries import generate_deepseek_analysis, get_stock_summaries
+from app.services.summaries import get_stock_summaries
 
 router = APIRouter(prefix="/stocks", tags=["Stocks"])
 sync_jobs_router = APIRouter(prefix="/stock-sync-jobs", tags=["Stock Sync Jobs"])
@@ -46,6 +52,26 @@ def _read_stock_sync_job(job: StockSyncJob) -> StockSyncJobRead:
         records_upserted=job.records_upserted,
         records_skipped=job.records_skipped,
         months_requested=job.months_requested,
+        created_at=job.created_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+    )
+
+
+def _read_ai_analysis_job(job: AIAnalysisJob) -> AIAnalysisJobRead:
+    result = None
+    if job.result_json:
+        try:
+            result = AIAnalysisResponse.model_validate_json(job.result_json)
+        except Exception:
+            result = None
+
+    return AIAnalysisJobRead(
+        id=job.id,
+        symbol=job.stock.symbol,
+        status=job.status,
+        result=result,
+        error=AI_ANALYSIS_BUSY_DETAIL if job.status == "failed" else None,
         created_at=job.created_at,
         started_at=job.started_at,
         completed_at=job.completed_at,
@@ -374,10 +400,18 @@ def get_stock_profile(
         market_cap=fundamental.market_cap if fundamental else None,
     )
 
-@router.get("/{symbol}/ai-analysis", response_model=AIAnalysisResponse)
+@router.get(
+    "/{symbol}/ai-analysis",
+    response_model=AIAnalysisResponse | AIAnalysisJobRead,
+    responses={
+        202: {"model": AIAnalysisJobRead, "description": "AI analysis job accepted or running"},
+        503: {"description": "AI provider unavailable"},
+    },
+)
 @conditional_limit("5/minute", key_func=get_authenticated_subject_or_address)
 def get_stock_ai_analysis(
     request: Request,
+    response: Response,
     symbol: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -395,6 +429,28 @@ def get_stock_ai_analysis(
     cached_analysis = ai_analysis_cache.get(stock.symbol)
     if cached_analysis:
         return cached_analysis
+
+    if not settings.DEEPSEEK_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=AI_ANALYSIS_BUSY_DETAIL,
+        )
+
+    recent_analysis = ai_analysis_job_service.get_recent_success(db, stock)
+    if recent_analysis:
+        return recent_analysis
+
+    active_job = ai_analysis_job_service.get_active_job(db, stock)
+    if active_job:
+        response.status_code = status.HTTP_202_ACCEPTED
+        response.headers["Location"] = request.url.path
+        return _read_ai_analysis_job(active_job)
+
+    if ai_analysis_job_service.has_recent_failure(db, stock):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=AI_ANALYSIS_BUSY_DETAIL,
+        )
 
     try:
         fundamental = get_stock_fundamentals(db, stock)
@@ -415,22 +471,19 @@ def get_stock_ai_analysis(
         "system_quantitative_action": system_action,
     }
 
-    analysis_result = generate_deepseek_analysis(
-        stock_code=stock.symbol,
-        company_name=stock.name,
-        context_data=context_data
-    )
-
-    if not analysis_result:
+    try:
+        job = ai_analysis_job_service.enqueue(
+            db,
+            stock=stock,
+            user_id=current_user.id,
+            context_data=context_data,
+        )
+    except AIAnalysisProviderUnavailable:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="系統繁忙，暫時無法產生 AI 分析"
+            detail=AI_ANALYSIS_BUSY_DETAIL,
         )
 
-    ai_analysis_cache.set(
-        stock.symbol,
-        analysis_result,
-        settings.ai_analysis_cache_ttl_seconds,
-    )
-
-    return analysis_result
+    response.status_code = status.HTTP_202_ACCEPTED
+    response.headers["Location"] = request.url.path
+    return _read_ai_analysis_job(job)

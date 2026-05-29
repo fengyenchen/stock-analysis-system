@@ -459,3 +459,14 @@ class AIAnalysisResponse(BaseModel):
     action: Literal[-1, 0, 1] = Field(..., description="1代表買入, 0代表觀望, -1代表賣出")
     summary: AIAnalysisSummary
     reasons: AIAnalysisReasons
+
+
+class AIAnalysisJobRead(BaseModel):
+    id: int
+    symbol: str
+    status: str
+    result: Optional[AIAnalysisResponse] = None
+    error: Optional[str] = None
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
