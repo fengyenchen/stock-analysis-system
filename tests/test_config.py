@@ -40,6 +40,7 @@ class TestSettingsDefaults:
         assert s.ai_analysis_max_queued_jobs == 20
         assert s.ai_analysis_circuit_failure_threshold == 3
         assert s.ai_analysis_circuit_cooldown_seconds == 60
+        assert s.ai_analysis_job_stale_seconds == 300
 
     def test_secret_key_has_reasonable_length(self):
         s = Settings()
@@ -81,6 +82,7 @@ class TestSettingsEnvOverride:
                 "AI_ANALYSIS_MAX_QUEUED_JOBS": "3",
                 "AI_ANALYSIS_CIRCUIT_FAILURE_THRESHOLD": "2",
                 "AI_ANALYSIS_CIRCUIT_COOLDOWN_SECONDS": "30",
+                "AI_ANALYSIS_JOB_STALE_SECONDS": "45",
             },
             clear=False,
         ):
@@ -90,6 +92,7 @@ class TestSettingsEnvOverride:
             assert s.ai_analysis_max_queued_jobs == 3
             assert s.ai_analysis_circuit_failure_threshold == 2
             assert s.ai_analysis_circuit_cooldown_seconds == 30
+            assert s.ai_analysis_job_stale_seconds == 45
 
 
 class TestSettingsValidation:

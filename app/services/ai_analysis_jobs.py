@@ -64,15 +64,33 @@ class AIAnalysisJobService:
         return result
 
     def get_active_job(self, db: Session, stock: Stock) -> AIAnalysisJob | None:
-        return (
+        jobs = (
             db.query(AIAnalysisJob)
             .filter(
                 AIAnalysisJob.stock_id == stock.id,
                 AIAnalysisJob.status.in_(ACTIVE_JOB_STATUSES),
             )
             .order_by(AIAnalysisJob.created_at.desc())
-            .first()
+            .all()
         )
+
+        now = datetime.now(timezone.utc)
+        stale_jobs = []
+        active_job = None
+        for job in jobs:
+            if self._is_stale_active_job(job, now):
+                job.status = "failed"
+                job.last_error = "AI analysis job expired before completion"
+                job.completed_at = now
+                stale_jobs.append(job)
+                continue
+
+            if active_job is None:
+                active_job = job
+
+        if stale_jobs:
+            db.commit()
+        return active_job
 
     def has_recent_failure(self, db: Session, stock: Stock) -> bool:
         cutoff = datetime.now(timezone.utc) - timedelta(
@@ -98,17 +116,18 @@ class AIAnalysisJobService:
         user_id: int,
         context_data: dict,
     ) -> AIAnalysisJob:
-        self._ensure_provider_available()
+        half_open_trial = self._ensure_provider_available()
 
         if not self._capacity.acquire(blocking=False):
+            if half_open_trial:
+                self._cancel_half_open_trial()
             raise AIAnalysisProviderUnavailable("AI analysis provider queue is full")
 
         job = AIAnalysisJob(stock_id=stock.id, user_id=user_id, status="pending")
-        db.add(job)
-        db.commit()
-        db.refresh(job)
-
         try:
+            db.add(job)
+            db.commit()
+            db.refresh(job)
             self._get_executor().submit(
                 self._run_job,
                 job.id,
@@ -118,10 +137,14 @@ class AIAnalysisJobService:
             )
         except Exception:
             self._capacity.release()
-            job.status = "failed"
-            job.last_error = "Failed to enqueue AI analysis job"
-            job.completed_at = datetime.now(timezone.utc)
-            db.commit()
+            if half_open_trial:
+                self._cancel_half_open_trial()
+            db.rollback()
+            if job.id is not None:
+                job.status = "failed"
+                job.last_error = "Failed to enqueue AI analysis job"
+                job.completed_at = datetime.now(timezone.utc)
+                db.commit()
             raise
 
         return job
@@ -142,11 +165,11 @@ class AIAnalysisJobService:
                 )
             return self._executor
 
-    def _ensure_provider_available(self) -> None:
+    def _ensure_provider_available(self) -> bool:
         now = time.monotonic()
         with self._lock:
             if self._circuit_opened_at is None:
-                return
+                return False
 
             elapsed = now - self._circuit_opened_at
             if elapsed < settings.ai_analysis_circuit_cooldown_seconds:
@@ -156,6 +179,11 @@ class AIAnalysisJobService:
                 raise AIAnalysisProviderUnavailable("AI analysis provider trial is in flight")
 
             self._half_open_in_flight = True
+            return True
+
+    def _cancel_half_open_trial(self) -> None:
+        with self._lock:
+            self._half_open_in_flight = False
 
     def _record_success(self) -> None:
         with self._lock:
@@ -169,6 +197,16 @@ class AIAnalysisJobService:
             self._half_open_in_flight = False
             if self._consecutive_failures >= settings.ai_analysis_circuit_failure_threshold:
                 self._circuit_opened_at = time.monotonic()
+
+    def _is_stale_active_job(self, job: AIAnalysisJob, now: datetime) -> bool:
+        job_timestamp = job.started_at or job.created_at
+        if not job_timestamp:
+            return False
+        if job_timestamp.tzinfo is None:
+            job_timestamp = job_timestamp.replace(tzinfo=timezone.utc)
+
+        stale_cutoff = now - timedelta(seconds=settings.ai_analysis_job_stale_seconds)
+        return job_timestamp <= stale_cutoff
 
     def _run_job(
         self,

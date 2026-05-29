@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     ai_analysis_max_queued_jobs: int = 20
     ai_analysis_circuit_failure_threshold: int = 3
     ai_analysis_circuit_cooldown_seconds: int = 60
+    ai_analysis_job_stale_seconds: int = 300
 
 
 settings = Settings()

@@ -308,6 +308,7 @@ All configuration is managed through environment variables in `.env`:
 | `AI_ANALYSIS_MAX_QUEUED_JOBS` | 20 | Max AI analysis provider jobs waiting to run |
 | `AI_ANALYSIS_CIRCUIT_FAILURE_THRESHOLD` | 3 | Consecutive provider failures before opening the circuit |
 | `AI_ANALYSIS_CIRCUIT_COOLDOWN_SECONDS` | 60 | Seconds to reject new provider work after the circuit opens |
+| `AI_ANALYSIS_JOB_STALE_SECONDS` | 300 | Seconds before an unfinished AI analysis job is expired after interruption |
 
 ## AI Analysis Health Signals
 

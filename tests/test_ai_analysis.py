@@ -1,15 +1,18 @@
 import json
 import logging
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
+import pytest
 from fastapi import status
 
+from app.models import AIAnalysisJob, User
 from app.schemas import AIAnalysisResponse
 from app.services import summaries
 from app.services.ai_analysis_cache import AIAnalysisCache
-from app.services.ai_analysis_jobs import AIAnalysisProviderUnavailable
+from app.services.ai_analysis_jobs import AIAnalysisJobService, AIAnalysisProviderUnavailable
 
 
 def _records_for(caplog, event: str):
@@ -454,6 +457,68 @@ def test_ai_analysis_queue_or_circuit_open_returns_503(auth_client, sample_stock
     response = auth_client.get("/api/v1/stocks/2330/ai-analysis")
 
     assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+
+
+def test_ai_analysis_stale_active_job_expires(
+    auth_client,
+    sample_stocks,
+    db_session,
+    monkeypatch,
+):
+    user = db_session.query(User).filter(User.username == "testuser").first()
+    stale_started_at = datetime.now(timezone.utc) - timedelta(seconds=301)
+    job = AIAnalysisJob(
+        stock_id=sample_stocks[0].id,
+        user_id=user.id,
+        status="running",
+        started_at=stale_started_at,
+        created_at=stale_started_at,
+    )
+    db_session.add(job)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        "app.services.ai_analysis_jobs.settings.ai_analysis_job_stale_seconds",
+        300,
+    )
+
+    service = AIAnalysisJobService()
+    active_job = service.get_active_job(db_session, sample_stocks[0])
+
+    assert active_job is None
+    db_session.refresh(job)
+    assert job.status == "failed"
+    assert job.last_error == "AI analysis job expired before completion"
+    assert job.completed_at is not None
+
+
+def test_ai_analysis_half_open_resets_when_queue_is_full(
+    auth_client,
+    sample_stocks,
+    db_session,
+    monkeypatch,
+):
+    user = db_session.query(User).filter(User.username == "testuser").first()
+    monkeypatch.setattr("app.services.ai_analysis_jobs.settings.ai_analysis_max_concurrent_jobs", 1)
+    monkeypatch.setattr("app.services.ai_analysis_jobs.settings.ai_analysis_max_queued_jobs", 0)
+    monkeypatch.setattr(
+        "app.services.ai_analysis_jobs.settings.ai_analysis_circuit_cooldown_seconds",
+        1,
+    )
+
+    service = AIAnalysisJobService()
+    service._circuit_opened_at = time.monotonic() - 2
+    assert service._capacity.acquire(blocking=False)
+
+    with pytest.raises(AIAnalysisProviderUnavailable):
+        service.enqueue(
+            db_session,
+            stock=sample_stocks[0],
+            user_id=user.id,
+            context_data={},
+        )
+
+    assert service._half_open_in_flight is False
 
 
 def test_generate_deepseek_analysis_serializes_decimal_context(monkeypatch, caplog):
