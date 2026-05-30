@@ -9,6 +9,7 @@ import {
   syncStockPrices,
   exportStockHistoryCSV,
   getStock,
+  getStockAIAnalysis,
   getStockPeers,
   getStockProfile,
   getTargetPrices,
@@ -42,6 +43,8 @@ import { KeyMetricsGrid } from "@/components/stock/KeyMetricsGrid";
 import { AnalystConsensus } from "@/components/stock/AnalystConsensus";
 import { RelatedStocks } from "@/components/stock/RelatedStocks";
 import { FinancialHealthScores } from "@/components/stock/FinancialHealthScores";
+import { AIAnalysisPanel } from "@/components/stock/AIAnalysisPanel";
+import { isActiveAIAnalysisJob } from "@/lib/aiAnalysis";
 
 import {
   RefreshCw,
@@ -177,6 +180,15 @@ export function StockDetailPage() {
     queryKey: ["stock-recommendation", symbol],
     queryFn: () => getStockRecommendation(symbol!),
     enabled: !!symbol,
+  });
+
+  const aiAnalysisQuery = useQuery({
+    queryKey: ["stock-ai-analysis", symbol],
+    queryFn: () => getStockAIAnalysis(symbol!),
+    enabled: !!symbol && isAuthenticated,
+    retry: false,
+    refetchInterval: (query) =>
+      isActiveAIAnalysisJob(query.state.data) ? 5000 : false,
   });
 
   const targetPricesQuery = useQuery({
@@ -435,6 +447,17 @@ export function StockDetailPage() {
                 }
               />
             )}
+
+            <AIAnalysisPanel
+              symbol={symbol || ""}
+              stockName={stockQuery.data?.name}
+              data={aiAnalysisQuery.data}
+              isLoading={aiAnalysisQuery.isLoading}
+              isFetching={aiAnalysisQuery.isFetching}
+              error={aiAnalysisQuery.error}
+              isAuthenticated={isAuthenticated}
+              onRefresh={() => aiAnalysisQuery.refetch()}
+            />
 
             {/* Quick Stats Grid */}
             {isVisible("quick_stats_grid") && (
