@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
 import {
   getWatchlist,
   getWatchlistQuotes,
@@ -8,12 +8,23 @@ import {
   addWatchlistItem,
 } from "@/api/watchlists";
 import { searchStocks } from "@/api/stocks";
+import { getStockAIAnalysis } from "@/api/stocks";
 import { useSSEQuotes } from "@/hooks/useSSEQuotes";
 import { getApiErrorMessage } from "@/api/client";
+import {
+  getResolvedAIAnalysis,
+  isActiveAIAnalysisJob,
+} from "@/lib/aiAnalysis";
 import { toast } from "sonner";
 import {
   ArrowLeft,
+  Bot,
+  Brain,
+  CircleDot,
+  FileText,
+  Loader2,
   Search,
+  Sparkles,
   Trash2,
   TrendingUp,
   TrendingDown,
@@ -24,6 +35,19 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+
+const aiActionLabels = {
+  1: "Buy",
+  0: "Hold",
+  [-1]: "Sell",
+} as const;
+
+const aiActionBadge = {
+  1: "success",
+  0: "warning",
+  [-1]: "danger",
+} as const;
 
 export function WatchlistDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -32,6 +56,7 @@ export function WatchlistDetailPage() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
+  const [runWatchlistAI, setRunWatchlistAI] = useState(false);
 
   const watchlistQuery = useQuery({
     queryKey: ["watchlist", watchlistId],
@@ -55,6 +80,17 @@ export function WatchlistDetailPage() {
     queryKey: ["stock-search-add", searchQuery],
     queryFn: () => searchStocks(searchQuery),
     enabled: searchQuery.length > 1 && showSearch,
+  });
+
+  const aiAnalysisQueries = useQueries({
+    queries: symbols.map((stockSymbol) => ({
+      queryKey: ["stock-ai-analysis", stockSymbol],
+      queryFn: () => getStockAIAnalysis(stockSymbol),
+      enabled: runWatchlistAI,
+      retry: false,
+      refetchInterval: (query: { state: { data: unknown } }) =>
+        isActiveAIAnalysisJob(query.state.data as never) ? 5000 : false,
+    })),
   });
 
   const removeMutation = useMutation({
@@ -86,6 +122,38 @@ export function WatchlistDetailPage() {
   });
 
   const watchlist = watchlistQuery.data;
+
+  const aiRows = useMemo(() => {
+    return symbols.map((stockSymbol, index) => {
+      const stock = watchlist?.items.find((item) => item.symbol === stockSymbol);
+      const query = aiAnalysisQueries[index];
+      const analysis = getResolvedAIAnalysis(query?.data);
+      return {
+        symbol: stockSymbol,
+        name: stock?.name ?? "",
+        analysis,
+        isLoading: query?.isLoading || isActiveAIAnalysisJob(query?.data),
+        isFetching: query?.isFetching,
+        error: query?.error,
+      };
+    });
+  }, [aiAnalysisQueries, symbols, watchlist]);
+
+  const aiSummary = useMemo(() => {
+    return aiRows.reduce(
+      (acc, row) => {
+        if (row.analysis?.action === 1) acc.buy += 1;
+        if (row.analysis?.action === 0) acc.hold += 1;
+        if (row.analysis?.action === -1) acc.sell += 1;
+        if (row.isLoading) acc.pending += 1;
+        if (row.error) acc.failed += 1;
+        return acc;
+      },
+      { buy: 0, hold: 0, sell: 0, pending: 0, failed: 0 }
+    );
+  }, [aiRows]);
+
+  const isAnalyzingWatchlist = aiAnalysisQueries.some((query) => query.isLoading || query.isFetching);
 
   const quoteMap = useMemo(() => {
     const map = new Map();
@@ -178,6 +246,137 @@ export function WatchlistDetailPage() {
             <Skeleton key={i} className="h-16 w-full" />
           ))}
         </div>
+      )}
+
+      {watchlist && watchlist.items.length > 0 && (
+        <Card>
+          <CardHeader className="flex-row items-center justify-between gap-3">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Bot className="h-4 w-4 text-accent" />
+                Watchlist AI Analysis
+              </CardTitle>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Aggregates AI actions across all stocks in this watchlist.
+              </p>
+            </div>
+            <Button
+              onClick={() => {
+                setRunWatchlistAI(true);
+                aiAnalysisQueries.forEach((query) => query.refetch());
+              }}
+              disabled={isAnalyzingWatchlist}
+            >
+              {isAnalyzingWatchlist ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              Analyze Watchlist
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+              <div className="rounded-lg border border-border bg-muted p-3">
+                <p className="text-xs text-muted-foreground">Buy</p>
+                <p className="text-xl font-semibold text-success">{aiSummary.buy}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-muted p-3">
+                <p className="text-xs text-muted-foreground">Hold</p>
+                <p className="text-xl font-semibold text-amber-500">{aiSummary.hold}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-muted p-3">
+                <p className="text-xs text-muted-foreground">Sell</p>
+                <p className="text-xl font-semibold text-danger">{aiSummary.sell}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-muted p-3">
+                <p className="text-xs text-muted-foreground">Pending</p>
+                <p className="text-xl font-semibold text-primary">{aiSummary.pending}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-muted p-3">
+                <p className="text-xs text-muted-foreground">Failed</p>
+                <p className="text-xl font-semibold text-primary">{aiSummary.failed}</p>
+              </div>
+            </div>
+
+            {!runWatchlistAI && (
+              <div className="rounded-lg border border-border bg-muted p-3 text-sm text-muted-foreground">
+                Run analysis to generate AI summaries for each stock in this watchlist.
+              </div>
+            )}
+
+            {runWatchlistAI && (
+              <div className="space-y-3">
+                {aiRows.map((row) => {
+                  const action = row.analysis?.action;
+                  return (
+                    <div key={row.symbol} className="rounded-lg border border-border p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <Link
+                            to={`/stocks/${row.symbol}`}
+                            className="font-semibold text-primary hover:text-accent"
+                          >
+                            {row.symbol}
+                          </Link>
+                          <span className="ml-2 text-sm text-muted-foreground">{row.name}</span>
+                        </div>
+                        {row.isLoading ? (
+                          <Badge variant="secondary" className="gap-1">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            Running
+                          </Badge>
+                        ) : action !== undefined ? (
+                          <Badge variant={aiActionBadge[action]}>
+                            {aiActionLabels[action]}
+                          </Badge>
+                        ) : row.error ? (
+                          <Badge variant="danger">Failed</Badge>
+                        ) : (
+                          <Badge variant="secondary">Queued</Badge>
+                        )}
+                      </div>
+
+                      {row.analysis ? (
+                        <div className="mt-3 space-y-3">
+                          <div>
+                            <p className="text-sm font-medium text-primary">
+                              {row.analysis.summary.short_sentence}
+                            </p>
+                            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                              {row.analysis.summary.long_sentence}
+                            </p>
+                          </div>
+                          <div className="grid gap-2 md:grid-cols-3">
+                            <p className="flex gap-2 text-xs leading-5 text-muted-foreground">
+                              <CircleDot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+                              {row.analysis.reasons.technical}
+                            </p>
+                            <p className="flex gap-2 text-xs leading-5 text-muted-foreground">
+                              <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+                              {row.analysis.reasons.fundamental}
+                            </p>
+                            <p className="flex gap-2 text-xs leading-5 text-muted-foreground">
+                              <Brain className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+                              {row.analysis.reasons.comprehensive}
+                            </p>
+                          </div>
+                          <p className="truncate text-xs text-muted-foreground">
+                            Request ID: <span className="font-mono">{row.analysis.request_id}</span>
+                          </p>
+                        </div>
+                      ) : row.error ? (
+                        <p className="mt-2 text-sm text-danger">
+                          {getApiErrorMessage(row.error, "AI analysis failed")}
+                        </p>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {!watchlistQuery.isLoading && watchlist && watchlist.items.length === 0 && (

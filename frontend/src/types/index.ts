@@ -189,6 +189,37 @@ export interface StockRecommendation {
   support_resistance: SupportResistanceLevels;
 }
 
+export interface AIAnalysisSummary {
+  short_sentence: string;
+  long_sentence: string;
+}
+
+export interface AIAnalysisReasons {
+  technical: string;
+  fundamental: string;
+  comprehensive: string;
+}
+
+export interface AIAnalysisResponse {
+  request_id: string;
+  action: -1 | 0 | 1;
+  summary: AIAnalysisSummary;
+  reasons: AIAnalysisReasons;
+}
+
+export interface AIAnalysisJob {
+  id: number;
+  symbol: string;
+  status: "queued" | "running" | "success" | "failed" | string;
+  result?: AIAnalysisResponse | null;
+  error?: string | null;
+  created_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+}
+
+export type AIAnalysisResult = AIAnalysisResponse | AIAnalysisJob;
+
 export interface StockSyncJob {
   id: number;
   symbol: string;

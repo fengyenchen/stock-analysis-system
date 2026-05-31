@@ -1,6 +1,7 @@
 import { apiClient } from "./client";
 import type {
   Stock,
+  AIAnalysisResult,
   StockFundamental,
   StockPrice,
   StockProfile,
@@ -64,6 +65,11 @@ export async function getStockSyncStatus(symbol: string): Promise<StockSyncStatu
 
 export async function getStockRecommendation(symbol: string): Promise<StockRecommendation> {
   const res = await apiClient.get<StockRecommendation>(`stocks/${symbol}/recommendation`);
+  return res.data;
+}
+
+export async function getStockAIAnalysis(symbol: string): Promise<AIAnalysisResult> {
+  const res = await apiClient.get<AIAnalysisResult>(`stocks/${symbol}/ai-analysis`);
   return res.data;
 }
 
