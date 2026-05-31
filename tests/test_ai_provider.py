@@ -7,7 +7,6 @@ tests/test_ai_analysis.py via ``generate_deepseek_analysis``.)
 """
 
 import json
-from datetime import datetime, timezone
 
 import pytest
 
