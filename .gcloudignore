@@ -1,0 +1,29 @@
+# Controls what gets uploaded to Cloud Build when running `gcloud run deploy --source .`
+.git/
+.gitignore
+
+# Python local env / caches
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Frontend is built and deployed on Vercel, not in the backend image.
+frontend/
+
+# Local data / secrets — never upload these.
+.env
+.env.*
+*.db
+*.sqlite3
+*.dump
+*.sql
+neon_db_string.txt
+secrets/
+
+# Docs
+DEPLOYMENT.md

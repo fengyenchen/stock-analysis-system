@@ -1,0 +1,33 @@
+# Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Frontend is deployed separately on Vercel — never ship it in the backend image.
+frontend/
+
+# Local data / secrets — must NOT end up in the image.
+.env
+.env.*
+*.db
+*.sqlite3
+*.dump
+*.sql
+neon_db_string.txt
+secrets/
+
+# VCS / tooling
+.git/
+.gitignore
+.github/
+.idea/
+.vscode/
+
+# Docs
+*.md
+DEPLOYMENT.md

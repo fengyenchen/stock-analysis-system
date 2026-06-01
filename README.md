@@ -62,3 +62,35 @@ python -m app.cli make-admin --email user@example.com
 ```
 
 AI analysis requires `DEEPSEEK_API_KEY` in `.env`.
+
+## Deployment
+
+The app is deployed as **frontend on Vercel + backend on Google Cloud Run + Neon Postgres**. The backend is a stateful, always-on service (APScheduler daily sync + an in-process AI-analysis job queue), so it runs as a long-lived container — not a serverless function. Cloud Run is therefore pinned to a single instance (`--min-instances 1 --max-instances 1`).
+
+| Component | Platform | Notes |
+| --- | --- | --- |
+| Frontend | Vercel | Static Vite/PWA build, `frontend/vercel.json` (SPA rewrite) |
+| Backend | Cloud Run (`asia-east1`) | `Dockerfile` + `entrypoint.sh` (runs `alembic upgrade head` then uvicorn) |
+| Database | Neon Postgres | Pooler endpoint with `?sslmode=require` |
+
+Deployment files: `Dockerfile`, `entrypoint.sh`, `.dockerignore`, `.gcloudignore`, `frontend/vercel.json`, `frontend/.env.production.example`.
+
+**Live URLs**
+
+- Frontend: <https://frontend-nine-self-88.vercel.app>
+- Backend: <https://stock-analysis-api-813628638020.asia-east1.run.app> (`/health`, `/docs`)
+
+### Config
+
+- Backend secrets (`DATABASE_URL`, `DEEPSEEK_API_KEY`, `SECRET_KEY`) live in Google Secret Manager and are wired in via `--set-secrets`. Set `ENVIRONMENT=production` and `CORS_ORIGINS=<frontend origin>` as plain env vars. `CORS_ORIGINS` must be the explicit Vercel origin (not `*`), because the API sends `Access-Control-Allow-Credentials: true`.
+- Frontend reads `VITE_API_URL` (the Cloud Run base URL) at build time; the API client appends `/api/v1` automatically. This also drives the SSE quote stream origin.
+
+### Redeploy
+
+```bash
+# Backend (from repo root)
+gcloud run deploy stock-analysis-api --source . --region asia-east1
+
+# Frontend (from frontend/)
+vercel --prod
+```

@@ -21,7 +21,15 @@ export function useSSEQuotes(symbols: string[]) {
     let closed = false;
     const symbolParam = symbolsKey;
     const apiPrefix = import.meta.env.VITE_API_PREFIX || "/api/v1";
-    const url = `${apiPrefix}/events/quotes?symbols=${encodeURIComponent(symbolParam)}`;
+    // Resolve the backend origin so SSE works when the frontend (Vercel) and the
+    // backend (Cloud Run) live on different domains. Falls back to a relative
+    // path for local dev where the Vite proxy forwards /api to the backend.
+    const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "");
+    const apiUrl = trimTrailingSlash(import.meta.env.VITE_API_URL || "");
+    const apiOrigin = apiUrl
+      ? trimTrailingSlash(apiUrl.endsWith(apiPrefix) ? apiUrl.slice(0, -apiPrefix.length) : apiUrl)
+      : trimTrailingSlash(import.meta.env.VITE_API_ORIGIN || "");
+    const url = `${apiOrigin}${apiPrefix}/events/quotes?symbols=${encodeURIComponent(symbolParam)}`;
 
     const clearReconnectTimer = () => {
       if (reconnectTimer) {
