@@ -230,6 +230,7 @@ export function StockDetailPage() {
               recommendation={rec || null}
               fundamentals={fundamentals || null}
               quote={quote || null}
+              priceHistoryCount={chartData.length}
               aiAnalysis={aiAnalysis}
               aiIsLoading={aiIsLoading}
               isAuthenticated={isAuthenticated}
