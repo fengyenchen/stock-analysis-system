@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Stock, StockFundamental
@@ -90,6 +91,24 @@ def get_stock_fundamentals(db: Session, stock: Stock) -> Optional[StockFundament
         existing = StockFundamental(stock_id=stock.id, **data)
         db.add(existing)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # A concurrent request inserted the row first (unique constraint on
+        # stock_id). Roll back our losing INSERT, then fetch and update the
+        # row the winner created so this request still returns fresh data.
+        db.rollback()
+        existing = (
+            db.query(StockFundamental)
+            .filter(StockFundamental.stock_id == stock.id)
+            .first()
+        )
+        if existing is None:
+            return None
+        for key, value in data.items():
+            setattr(existing, key, value)
+        existing.updated_at = datetime.now(timezone.utc)
+        db.commit()
+
     db.refresh(existing)
     return existing

@@ -62,10 +62,3 @@ python -m app.cli make-admin --email user@example.com
 ```
 
 AI analysis requires `DEEPSEEK_API_KEY` in `.env`.
-
-## Tests
-
-```bash
-pytest
-cd frontend && npm run lint
-```
