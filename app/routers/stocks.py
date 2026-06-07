@@ -34,6 +34,8 @@ from app.services.ai_analysis_jobs import (
 )
 from app.services.fundamentals import get_stock_fundamentals
 from app.services.lookups import get_stock_or_404
+from app.services.news import get_recent_news
+from app.services.price_backfill import price_backfill_service
 from app.services.recommendations import get_stock_recommendation
 from app.services.stock_data import async_get_realtime_quote, sync_historical_prices
 from app.services.summaries import get_stock_summaries
@@ -199,6 +201,7 @@ def get_stock_recommendation_endpoint(
 ):
     """Get a rule-based technical trading signal for a stock."""
     stock = get_stock_or_404(db, symbol, active_only=True)
+    price_backfill_service.maybe_backfill(db, stock)
     return get_stock_recommendation(db, stock)
 
 
@@ -383,6 +386,10 @@ def get_stock_ai_analysis(
     """
     stock = get_stock_or_404(db, symbol, active_only=True)
 
+    # Self-heal thin price history (the daily sync only keeps ~10 days fresh) so
+    # the technical side of the analysis isn't empty for rarely-synced stocks.
+    price_backfill_service.maybe_backfill(db, stock)
+
     cached_analysis = ai_analysis_cache.get(stock.symbol)
     if cached_analysis:
         return cached_analysis
@@ -444,16 +451,50 @@ def get_stock_ai_analysis(
 
     try:
         rec = get_stock_recommendation(db, stock)
-        system_action = rec.recommendation
     except Exception:
-        system_action = None
+        rec = None
+
+    # The AI contract encodes action as -1/0/1; map the rule-based string
+    # signal into the same space so the model can anchor on it directly.
+    action_to_score = {"buy": 1, "hold": 0, "sell": -1}
+    system_action = action_to_score.get(rec.recommendation) if rec else None
 
     context_data = {
         "industry": stock.industry,
-        "pe_ratio": fundamental.pe_ratio if fundamental else None,
-        "dividend_yield": fundamental.dividend_yield if fundamental else None,
-        "market_cap": fundamental.market_cap if fundamental else None,
+        # ETFs have no company-level fundamentals; flag it so the model assesses
+        # the fund itself rather than commenting on null revenue/margins/ROE.
+        "is_etf": bool(stock.is_etf),
+        "fundamentals": {
+            "pe_ratio": fundamental.pe_ratio if fundamental else None,
+            "eps": fundamental.eps if fundamental else None,
+            "dividend_yield": fundamental.dividend_yield if fundamental else None,
+            "market_cap": fundamental.market_cap if fundamental else None,
+            "revenue_growth": fundamental.revenue_growth if fundamental else None,
+            "profit_margins": fundamental.profit_margins if fundamental else None,
+            "return_on_equity": fundamental.return_on_equity if fundamental else None,
+            "beta": fundamental.beta if fundamental else None,
+        },
+        # When the fundamentals were last refreshed (yfinance is cached up to 24h),
+        # so the model knows how stale the figures above may be.
+        "fundamentals_as_of": fundamental.updated_at.isoformat()
+        if fundamental and fundamental.updated_at
+        else None,
+        # Best-effort recent headlines; [] when none are available.
+        "recent_news": get_recent_news(stock),
         "system_quantitative_action": system_action,
+        "technical": {
+            "composite_score": rec.composite_score,
+            "confidence": rec.confidence,
+            # data_quality_score + reasons expose when the indicators below are
+            # real vs. neutral defaults (e.g. a freshly listed stock with < 20
+            # price bars), so the model doesn't treat "no data" as a true signal.
+            "data_quality_score": rec.data_quality_score,
+            "reasons": rec.reasons,
+            "indicator_signals": rec.indicator_signals,
+            "support_resistance": rec.support_resistance,
+        }
+        if rec
+        else None,
     }
 
     try:
