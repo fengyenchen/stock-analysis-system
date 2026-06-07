@@ -8,6 +8,7 @@ from typing import List
 from app.config import settings
 from app.database import SessionLocal
 from app.models import Stock
+from app.services.fundamentals import get_stock_fundamentals
 from app.services.stock_data import (
     set_rate_limit_lock,
     sync_historical_prices,
@@ -99,6 +100,64 @@ def cmd_backfill(args: argparse.Namespace) -> int:
     return 0 if failed == 0 else 1
 
 
+def cmd_fundamentals(args: argparse.Namespace) -> int:
+    db = SessionLocal()
+    try:
+        if args.symbols:
+            symbols = [s.strip() for s in args.symbols.split(",")]
+            stocks = (
+                db.query(Stock)
+                .filter(Stock.is_active == True, Stock.symbol.in_(symbols))
+                .all()
+            )
+        else:
+            stocks = db.query(Stock).filter(Stock.is_active == True).all()
+    finally:
+        db.close()
+
+    if not stocks:
+        print("No active stocks for fundamentals backfill.", file=sys.stderr)
+        return 1
+
+    total_stocks = len(stocks)
+    print(f"Backfilling fundamentals for {total_stocks} stocks using {args.workers} workers...")
+
+    completed = 0
+    failed = 0
+    populated = 0
+
+    def _sync_one(symbol: str) -> tuple:
+        db = SessionLocal()
+        try:
+            stock = db.query(Stock).filter(Stock.symbol == symbol).first()
+            fundamental = get_stock_fundamentals(db, stock)
+            ok = fundamental is not None and fundamental.pe_ratio is not None
+            return (symbol, True, ok, None)
+        except Exception as exc:
+            return (symbol, False, False, str(exc))
+        finally:
+            db.close()
+
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        futures = {executor.submit(_sync_one, stock.symbol): stock.symbol for stock in stocks}
+        for future in as_completed(futures):
+            symbol, success, has_data, error = future.result()
+            if success:
+                completed += 1
+                if has_data:
+                    populated += 1
+                tag = "ok" if has_data else "empty"
+                print(f"  [{completed + failed}/{total_stocks}] {symbol}: {tag}")
+            else:
+                failed += 1
+                print(f"  [{completed + failed}/{total_stocks}] {symbol}: FAILED ({error})", file=sys.stderr)
+
+    print(
+        f"\nDone. {completed} processed ({populated} with data), {failed} failed."
+    )
+    return 0 if failed == 0 else 1
+
+
 def cmd_make_admin(args: argparse.Namespace) -> int:
     db = SessionLocal()
     try:
@@ -150,6 +209,17 @@ def main(argv: List[str] | None = None) -> int:
         "--rate-limit", type=float, default=None, help="Override rate limit seconds between requests"
     )
 
+    # fundamentals
+    fundamentals_parser = subparsers.add_parser(
+        "fundamentals", help="Backfill stock fundamentals from yfinance"
+    )
+    fundamentals_parser.add_argument(
+        "--workers", type=int, default=4, help="Number of parallel workers (default: 4)"
+    )
+    fundamentals_parser.add_argument(
+        "--symbols", type=str, default=None, help="Comma-separated symbols (default: all active)"
+    )
+
     # make-admin
     make_admin_parser = subparsers.add_parser("make-admin", help="Promote a user to admin")
     make_admin_parser.add_argument("--username", type=str, default=None, help="Username of the user to promote")
@@ -161,6 +231,8 @@ def main(argv: List[str] | None = None) -> int:
         return cmd_sync_list(args)
     if args.command == "backfill":
         return cmd_backfill(args)
+    if args.command == "fundamentals":
+        return cmd_fundamentals(args)
     if args.command == "make-admin":
         return cmd_make_admin(args)
 

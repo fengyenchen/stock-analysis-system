@@ -8,6 +8,17 @@ from sqlalchemy.orm import Session
 from app.models import Stock, StockFundamental
 
 
+def _yf_session():
+    """Return a browser-impersonating curl_cffi session to dodge Yahoo's 429
+    rate limiting, or None to fall back to yfinance's default requests session."""
+    try:
+        from curl_cffi import requests as crequests
+
+        return crequests.Session(impersonate="chrome")
+    except Exception:
+        return None
+
+
 def _safe_decimal(value) -> Optional[Decimal]:
     if value is None:
         return None
@@ -48,11 +59,20 @@ def get_stock_fundamentals(db: Session, stock: Stock) -> Optional[StockFundament
         return existing
 
     suffix = ".TW" if stock.market == "TWSE" else ".TWO"
-    ticker = yf.Ticker(f"{stock.symbol}{suffix}")
-    try:
-        info = ticker.info or {}
-    except Exception:
-        return existing
+    symbol_full = f"{stock.symbol}{suffix}"
+
+    # Yahoo aggressively rate-limits plain requests (HTTP 429 / YFRateLimitError),
+    # especially from datacenter IPs like Cloud Run, which left this table empty.
+    # A curl_cffi browser-impersonating session bypasses that bot detection.
+    info: dict = {}
+    for _attempt in range(2):
+        try:
+            ticker = yf.Ticker(symbol_full, session=_yf_session())
+            info = ticker.info or {}
+        except Exception:
+            info = {}
+        if info:
+            break
 
     if not info:
         return existing

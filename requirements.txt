@@ -20,6 +20,7 @@ python-multipart==0.0.9
 apscheduler==3.11.2
 twstock==1.5.1
 yfinance==0.2.55
+curl_cffi==0.15.0
 slowapi==0.1.9
 redis==5.0.7
 openai==2.38.0
