@@ -130,19 +130,59 @@ def get_stock(
     return get_stock_or_404(db, symbol, active_only=True)
 
 
+def _quote_from_latest_price(db: Session, stock: Stock) -> Optional[dict]:
+    """Build a quote dict from the most recent stored daily close.
+
+    Used as a fallback when the real-time source has no data (market closed,
+    weekend/holiday, before the open) so the page shows the last close instead
+    of going blank. ``last_updated`` is the trading date of that close.
+    """
+    latest = (
+        db.query(StockPrice)
+        .filter(StockPrice.stock_id == stock.id)
+        .order_by(StockPrice.date.desc())
+        .first()
+    )
+    if latest is None:
+        return None
+
+    return {
+        "symbol": stock.symbol,
+        "name": stock.name or "",
+        "price": latest.close_price,
+        "open": latest.open_price,
+        "high": latest.high_price,
+        "low": latest.low_price,
+        "close": latest.close_price,
+        "volume": latest.volume or 0,
+        "change": latest.change,
+        "change_percent": latest.change_percent,
+        "last_updated": datetime(
+            latest.date.year, latest.date.month, latest.date.day, tzinfo=timezone.utc
+        ),
+    }
+
+
 @router.get("/{symbol}/quotes/latest", response_model=StockQuoteRead)
 async def get_stock_quote(
     symbol: str,
     db: Session = Depends(get_db),
 ):
-    """Get real-time quote for a stock (delayed data from twstock)."""
-    get_stock_or_404(db, symbol)
+    """Get the latest quote for a stock.
+
+    Prefers the real-time source (delayed data from twstock); when that is
+    unavailable, falls back to the most recent stored daily close so the page
+    still shows the last known data on non-trading days.
+    """
+    stock = get_stock_or_404(db, symbol)
 
     quote = await async_get_realtime_quote(symbol)
     if quote is None:
+        quote = _quote_from_latest_price(db, stock)
+    if quote is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Unable to fetch real-time quote from data source",
+            detail="No quote available from real-time source or stored history",
         )
 
     return StockQuoteRead(**quote)
