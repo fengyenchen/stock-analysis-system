@@ -1,7 +1,6 @@
 import { Link } from "react-router-dom";
-import { Share2, Star, ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
 import { isEtf, recommendationVariant } from "@/lib/signals";
 import type { StockHeaderProps } from "@/types/stock";
 
@@ -11,8 +10,6 @@ export function StockHeader({
   quote,
   recommendation,
   isUp,
-  onShare,
-  onWatchlist,
 }: StockHeaderProps) {
   const recVariant = recommendationVariant(recommendation?.recommendation);
 
@@ -119,27 +116,6 @@ export function StockHeader({
                 收盤
               </span>
             </div>
-          </div>
-
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              className="rounded-xl"
-              title="加入觀察清單"
-              onClick={onWatchlist}
-            >
-              <Star className="w-5 h-5 text-muted-foreground" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              className="rounded-xl"
-              title="分享"
-              onClick={onShare}
-            >
-              <Share2 className="w-5 h-5 text-muted-foreground" />
-            </Button>
           </div>
         </div>
       </div>

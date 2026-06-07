@@ -192,16 +192,6 @@ export function StockDetailPage() {
     setShowAddMenu((value) => !value);
   };
 
-  const handleShare = async () => {
-    const url = window.location.href;
-    if (navigator.share) {
-      try { await navigator.share({ title: `${symbol} Stock Detail`, url }); } catch { /* ignore */ }
-    } else {
-      await navigator.clipboard.writeText(url);
-      toast.success("Link copied to clipboard");
-    }
-  };
-
   const handleExportCSV = async () => {
     try {
       const blob = await exportStockHistoryCSV(symbol!);
@@ -246,8 +236,6 @@ export function StockDetailPage() {
                 quote={quote}
                 recommendation={rec || undefined}
                 isUp={isUp}
-                onShare={handleShare}
-                onWatchlist={handleWatchlistClick}
               />
             )}
 
@@ -266,6 +254,19 @@ export function StockDetailPage() {
               aiIsLoading={aiIsLoading}
               isAuthenticated={isAuthenticated}
             />
+          </div>
+
+          {/* Right Column */}
+          <div className="space-y-4 md:space-y-6">
+            {/* Quick Actions */}
+            {isVisible("quick_actions") && (
+              <QuickActions
+                onBuy={() => handleBuySell("buy")}
+                onSell={() => handleBuySell("sell")}
+                onAlert={handleAlertClick}
+                onWatchlist={handleWatchlistClick}
+              />
+            )}
 
             {/* Alert Form */}
             {isVisible("alert_form") && showAlertForm && (
@@ -305,19 +306,6 @@ export function StockDetailPage() {
                   </div>
                 </CardContent>
               </Card>
-            )}
-          </div>
-
-          {/* Right Column */}
-          <div className="space-y-4 md:space-y-6">
-            {/* Quick Actions */}
-            {isVisible("quick_actions") && (
-              <QuickActions
-                onBuy={() => handleBuySell("buy")}
-                onSell={() => handleBuySell("sell")}
-                onAlert={handleAlertClick}
-                onWatchlist={handleWatchlistClick}
-              />
             )}
 
             {/* Buy/Sell Modal */}
